@@ -54,7 +54,7 @@ export function connectGroupChat(): ReturnType<typeof io> {
 
     socket = io(`${baseUrl}/api/hermes/group-chat`, {
         auth: { token: token || undefined },
-        transports: ['websocket'],
+        transports: ['polling', 'websocket'],
         reconnection: true,
         reconnectionAttempts: Infinity,
         reconnectionDelay: 1000,

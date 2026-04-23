@@ -203,7 +203,8 @@ export class GroupChatServer {
 
         this.io = new Server(httpServer, {
             path: '/api/hermes/group-chat',
-            cors: { origin: '*', methods: ['GET', 'POST'] },
+            cors: { origin: '*' },
+            transports: ['websocket', 'polling'],
         })
         this.io.use(this.authMiddleware.bind(this))
         this.io.on('connection', this.onConnection.bind(this))
