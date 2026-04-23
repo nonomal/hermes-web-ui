@@ -75,6 +75,7 @@ export default {
     usage: 'Nutzung',
     channels: 'Kanale',
     terminal: 'Terminal',
+    groupChat: 'Gruppenchat',
     settings: 'Einstellungen',
     connected: 'Verbunden',
     disconnected: 'Getrennt',
@@ -485,6 +486,26 @@ export default {
     closeSession: 'Diese Sitzung schliessen?',
     sessionExited: 'Beendet',
     processExited: 'Prozess beendet mit Code {code}',
+  },
+
+  // Gruppenchat
+  groupChat: {
+    title: 'Gruppenchat',
+    createRoom: 'Raum erstellen',
+    joinByCode: 'Mit Code beitreten',
+    roomName: 'Raumname',
+    roomNamePlaceholder: 'Raumname eingeben',
+    inviteCode: 'Einladungscode',
+    autoGenerate: 'Automatisch generieren',
+    noRooms: 'Noch keine Raume',
+    selectOrCreate: 'Wahlen oder erstellen Sie einen Raum um zu chatten',
+    agents: 'Agenten',
+    members: 'Mitglieder',
+    roomCreated: 'Raum erstellt',
+    joined: 'Raum beigetreten',
+    joinFailed: 'Beitritt fehlgeschlagen',
+    inputPlaceholder: 'Nachricht eingeben... (Enter zum Senden)',
+    enterCode: 'Einladungscode eingeben',
   },
 
   // Usage

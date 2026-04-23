@@ -1,5 +1,6 @@
-import { beforeEach, afterEach, afterAll, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'fs'
+import { afterAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import { DatabaseSync } from 'node:sqlite'
+import { mkdtempSync, rmSync, mkdirSync, unlinkSync, existsSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -51,6 +52,15 @@ vi.mock('socket.io-client', () => {
     }
 })
 
+// --- In-memory SQLite for testing (no file I/O) ---
+
+function createTestDb(): DatabaseSync {
+    const db = new DatabaseSync(':memory:')
+    db.exec('PRAGMA journal_mode=WAL')
+    db.exec('PRAGMA foreign_keys=ON')
+    return db
+}
+
 const testDir = mkdtempSync(join(tmpdir(), 'hermes-test-'))
 let testIndex = 0
 
@@ -58,19 +68,23 @@ describe('group-chat routes', () => {
     let setGroupChatServer: any
     let groupChatRoutes: any
     let storage: any
+    let testDb: DatabaseSync | null = null
 
     beforeEach(async () => {
         vi.resetModules()
 
-        // Each test gets its own config mock with a fresh data dir
-        const dataDir = join(testDir, `run-${testIndex++}`)
-        vi.doMock('../../packages/server/src/config', () => ({
-            config: {
-                port: 8648,
-                upstream: 'http://127.0.0.1:8642',
-                uploadDir: '/tmp/hermes-test-uploads',
-                dataDir,
-                corsOrigins: '*',
+        // Create a fresh in-memory SQLite DB for each test
+        testDb = createTestDb()
+
+        // Mock getDb to return our test DB, ensureTable as schema migration
+        vi.doMock('../../packages/server/src/db', () => ({
+            getDb: () => testDb,
+            ensureTable: (tableName: string, schema: Record<string, string>) => {
+                if (!testDb) return
+                const colDefs = Object.entries(schema)
+                    .map(([col, def]) => `"${col}" ${def}`)
+                    .join(', ')
+                testDb.exec(`CREATE TABLE IF NOT EXISTS "${tableName}" (${colDefs})`)
             },
         }))
 
@@ -80,10 +94,9 @@ describe('group-chat routes', () => {
     })
 
     afterEach(() => {
-        if (storage) {
-            storage.close()
-            storage = null
-        }
+        testDb?.close()
+        testDb = null
+        storage = null
     })
 
     afterAll(() => {
@@ -223,7 +236,6 @@ describe('group-chat routes', () => {
             expect(ctx.status).toBe(200)
             expect(ctx.body.agent.profile).toBe('claude')
             expect(ctx.body.agent.invited).toBe(1)
-            expect(ctx.body.agent.agentId).toBeDefined()
             expect(ctx.body.agent.agentId).toBeDefined()
         })
 

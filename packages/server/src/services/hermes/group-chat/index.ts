@@ -1,11 +1,9 @@
-import { DatabaseSync } from 'node:sqlite'
 import { Server, Socket } from 'socket.io'
 import type { Server as HttpServer } from 'http'
-import { join } from 'path'
-import { mkdirSync } from 'fs'
 import { getToken } from '../../../services/auth'
-import { config } from '../../../config'
+import { getDb, ensureTable } from '../../../db'
 import { AgentClients } from './agent-clients'
+import { ContextEngine } from '../context-engine'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -34,92 +32,98 @@ interface Member {
     joinedAt: number
 }
 
-// ─── SQLite Storage ───────────────────────────────────────────
+// ─── SQLite Storage (global DB) ──────────────────────────────
+
+const GC_ROOMS_SCHEMA: Record<string, string> = {
+    id: 'TEXT PRIMARY KEY',
+    name: 'TEXT NOT NULL',
+    inviteCode: 'TEXT UNIQUE',
+}
+
+const GC_MESSAGES_SCHEMA: Record<string, string> = {
+    id: 'TEXT PRIMARY KEY',
+    roomId: 'TEXT NOT NULL',
+    senderId: 'TEXT NOT NULL',
+    senderName: 'TEXT NOT NULL',
+    content: 'TEXT NOT NULL',
+    timestamp: 'INTEGER NOT NULL',
+}
+
+const GC_ROOM_AGENTS_SCHEMA: Record<string, string> = {
+    id: 'TEXT PRIMARY KEY',
+    roomId: 'TEXT NOT NULL',
+    agentId: 'TEXT NOT NULL',
+    profile: 'TEXT NOT NULL',
+    name: 'TEXT NOT NULL',
+    description: "TEXT NOT NULL DEFAULT ''",
+    invited: 'INTEGER NOT NULL DEFAULT 0',
+}
+
+let _tablesEnsured = false
 
 class ChatStorage {
-    private db: DatabaseSync
+    private db() { return getDb() }
 
-    constructor(dbPath: string) {
-        this.db = new DatabaseSync(dbPath)
-        this.db.exec(`
-            CREATE TABLE IF NOT EXISTS rooms (
-                id       TEXT PRIMARY KEY,
-                name     TEXT NOT NULL,
-                inviteCode TEXT UNIQUE
-            )
-        `)
-        this.db.exec(`
-            CREATE TABLE IF NOT EXISTS messages (
-                id        TEXT PRIMARY KEY,
-                roomId    TEXT NOT NULL,
-                senderId  TEXT NOT NULL,
-                senderName TEXT NOT NULL,
-                content   TEXT NOT NULL,
-                timestamp INTEGER NOT NULL,
-                FOREIGN KEY (roomId) REFERENCES rooms(id)
-            )
-        `)
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(roomId, timestamp)')
-        this.db.exec(`
-            CREATE TABLE IF NOT EXISTS room_agents (
-                id          TEXT PRIMARY KEY,
-                roomId      TEXT NOT NULL,
-                agentId     TEXT NOT NULL,
-                profile     TEXT NOT NULL,
-                name        TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                invited     INTEGER NOT NULL DEFAULT 0,
-                FOREIGN KEY (roomId) REFERENCES rooms(id)
-            )
-        `)
-        this.db.exec('CREATE INDEX IF NOT EXISTS idx_room_agents_room ON room_agents(roomId)')
+    init(): void {
+        if (_tablesEnsured) return
+        const db = this.db()
+        if (!db) return
+        ensureTable('gc_rooms', GC_ROOMS_SCHEMA)
+        ensureTable('gc_messages', GC_MESSAGES_SCHEMA)
+        ensureTable('gc_room_agents', GC_ROOM_AGENTS_SCHEMA)
+        // Indexes (safe to run multiple times — CREATE INDEX IF NOT EXISTS)
+        try { db.exec('CREATE INDEX IF NOT EXISTS idx_gc_messages_room ON gc_messages(roomId, timestamp)') } catch { /* ignore */ }
+        try { db.exec('CREATE INDEX IF NOT EXISTS idx_gc_room_agents_room ON gc_room_agents(roomId)') } catch { /* ignore */ }
+        _tablesEnsured = true
     }
 
     // ─── Rooms ────────────────────────────────────────────────
 
     getRoom(roomId: string): { id: string; name: string; inviteCode: string | null } | undefined {
-        return this.db.prepare('SELECT id, name, inviteCode FROM rooms WHERE id = ?').get(roomId) as any
+        return this.db()?.prepare('SELECT id, name, inviteCode FROM gc_rooms WHERE id = ?').get(roomId) as any
     }
 
     getRoomByInviteCode(code: string): { id: string; name: string; inviteCode: string | null } | undefined {
-        return this.db.prepare('SELECT id, name, inviteCode FROM rooms WHERE inviteCode = ?').get(code) as any
+        return this.db()?.prepare('SELECT id, name, inviteCode FROM gc_rooms WHERE inviteCode = ?').get(code) as any
     }
 
     getAllRooms(): { id: string; name: string; inviteCode: string | null }[] {
-        return this.db.prepare('SELECT id, name, inviteCode FROM rooms ORDER BY id').all() as any[]
+        return (this.db()?.prepare('SELECT id, name, inviteCode FROM gc_rooms ORDER BY id').all() || []) as any[]
     }
 
     saveRoom(id: string, name: string, inviteCode?: string): void {
-        this.db.prepare('INSERT OR IGNORE INTO rooms (id, name, inviteCode) VALUES (?, ?, ?)').run(id, name, inviteCode || null)
+        this.db()?.prepare('INSERT OR IGNORE INTO gc_rooms (id, name, inviteCode) VALUES (?, ?, ?)').run(id, name, inviteCode || null)
     }
 
     updateRoomInviteCode(roomId: string, inviteCode: string): void {
-        this.db.prepare('UPDATE rooms SET inviteCode = ? WHERE id = ?').run(inviteCode, roomId)
+        this.db()?.prepare('UPDATE gc_rooms SET inviteCode = ? WHERE id = ?').run(inviteCode, roomId)
     }
 
     // ─── Messages ─────────────────────────────────────────────
 
     getMessages(roomId: string, limit = 500): ChatMessage[] {
-        const rows = this.db.prepare(
-            'SELECT id, roomId, senderId, senderName, content, timestamp FROM messages WHERE roomId = ? ORDER BY timestamp DESC LIMIT ?'
-        ).all(roomId, limit) as any[]
-        return rows.reverse() // return in chronological order
+        const rows = (this.db()?.prepare(
+            'SELECT id, roomId, senderId, senderName, content, timestamp FROM gc_messages WHERE roomId = ? ORDER BY timestamp DESC LIMIT ?'
+        ).all(roomId, limit) || []) as any[]
+        return rows.reverse()
     }
 
     addMessage(msg: ChatMessage): void {
-        this.db.prepare(
-            'INSERT INTO messages (id, roomId, senderId, senderName, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)'
+        this.db()?.prepare(
+            'INSERT INTO gc_messages (id, roomId, senderId, senderName, content, timestamp) VALUES (?, ?, ?, ?, ?, ?)'
         ).run(msg.id, msg.roomId, msg.senderId, msg.senderName, msg.content, msg.timestamp)
     }
 
     pruneMessages(roomId: string, keep = 500): void {
-        const count = (this.db.prepare('SELECT COUNT(*) as c FROM messages WHERE roomId = ?').get(roomId) as any).c
+        const db = this.db()
+        if (!db) return
+        const count = (db.prepare('SELECT COUNT(*) as c FROM gc_messages WHERE roomId = ?').get(roomId) as any)?.c
         if (count > keep) {
-            const cutoff = this.db.prepare(
-                'SELECT timestamp FROM messages WHERE roomId = ? ORDER BY timestamp DESC LIMIT 1 OFFSET ?'
+            const cutoff = db.prepare(
+                'SELECT timestamp FROM gc_messages WHERE roomId = ? ORDER BY timestamp DESC LIMIT 1 OFFSET ?'
             ).get(roomId, keep - 1) as any
             if (cutoff) {
-                this.db.prepare('DELETE FROM messages WHERE roomId = ? AND timestamp < ?').run(roomId, cutoff.timestamp)
+                db.prepare('DELETE FROM gc_messages WHERE roomId = ? AND timestamp < ?').run(roomId, cutoff.timestamp)
             }
         }
     }
@@ -127,25 +131,21 @@ class ChatStorage {
     // ─── Room Agents ──────────────────────────────────────────
 
     getRoomAgents(roomId: string): RoomAgent[] {
-        return this.db.prepare(
-            'SELECT id, roomId, agentId, profile, name, description, invited FROM room_agents WHERE roomId = ?'
-        ).all(roomId) as unknown as RoomAgent[]
+        return (this.db()?.prepare(
+            'SELECT id, roomId, agentId, profile, name, description, invited FROM gc_room_agents WHERE roomId = ?'
+        ).all(roomId) || []) as unknown as RoomAgent[]
     }
 
     addRoomAgent(roomId: string, agentId: string, profile: string, name: string, description: string, invited: number): RoomAgent {
         const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
-        this.db.prepare(
-            'INSERT INTO room_agents (id, roomId, agentId, profile, name, description, invited) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        this.db()?.prepare(
+            'INSERT INTO gc_room_agents (id, roomId, agentId, profile, name, description, invited) VALUES (?, ?, ?, ?, ?, ?, ?)'
         ).run(id, roomId, agentId, profile, name, description, invited)
         return { id, roomId, agentId, profile, name, description, invited }
     }
 
     removeRoomAgent(agentId: string): void {
-        this.db.prepare('DELETE FROM room_agents WHERE id = ?').run(agentId)
-    }
-
-    close(): void {
-        this.db.close()
+        this.db()?.prepare('DELETE FROM gc_room_agents WHERE id = ?').run(agentId)
     }
 }
 
@@ -198,9 +198,8 @@ export class GroupChatServer {
     }
 
     constructor(httpServer: HttpServer) {
-        const dbPath = join(config.dataDir, 'webui.db')
-        mkdirSync(config.dataDir, { recursive: true })
-        this.storage = new ChatStorage(dbPath)
+        this.storage = new ChatStorage()
+        this.storage.init()
 
         this.io = new Server(httpServer, {
             path: '/api/hermes/group-chat',
@@ -215,6 +214,11 @@ export class GroupChatServer {
         })
 
         console.log('[GroupChat] Socket.IO ready at /group-chat')
+
+        // Initialize context engine for group chat compression
+        const contextEngine = new ContextEngine({ messageFetcher: this.storage })
+        this.agentClients.setContextEngine(contextEngine)
+        this.agentClients.setStorage(this.storage)
 
         // Restore agent connections from SQLite
         this.restoreAgents()

@@ -79,6 +79,7 @@ export default {
     channels: '频道',
     gateways: '网关',
     terminal: '终端',
+    groupChat: '群聊',
     groupConversation: '对话',
     groupPlatform: '平台',
     groupAgent: '代理',
@@ -528,6 +529,26 @@ export default {
     closeSession: '关闭此会话？',
     sessionExited: '已退出',
     processExited: '进程已退出，代码 {code}',
+  },
+
+  // 群聊
+  groupChat: {
+    title: '群聊',
+    createRoom: '创建房间',
+    joinByCode: '通过邀请码加入',
+    roomName: '房间名称',
+    roomNamePlaceholder: '输入房间名称',
+    inviteCode: '邀请码',
+    autoGenerate: '自动生成',
+    noRooms: '暂无房间',
+    selectOrCreate: '选择或创建一个房间开始聊天',
+    agents: '智能体',
+    members: '成员',
+    roomCreated: '房间已创建',
+    joined: '已加入房间',
+    joinFailed: '加入房间失败',
+    inputPlaceholder: '输入消息... (Enter 发送)',
+    enterCode: '输入邀请码',
   },
 
   // 用量统计

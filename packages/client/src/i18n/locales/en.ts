@@ -79,6 +79,7 @@ export default {
     channels: 'Channels',
     gateways: 'Gateways',
     terminal: 'Terminal',
+    groupChat: 'Group Chat',
     groupConversation: 'Conversation',
     groupPlatform: 'Platform',
     groupAgent: 'Agent',
@@ -526,6 +527,26 @@ export default {
     closeSession: 'Close this session?',
     sessionExited: 'Exited',
     processExited: 'Process exited with code {code}',
+  },
+
+  // Group Chat
+  groupChat: {
+    title: 'Group Chat',
+    createRoom: 'Create Room',
+    joinByCode: 'Join by Code',
+    roomName: 'Room Name',
+    roomNamePlaceholder: 'Enter room name',
+    inviteCode: 'Invite Code',
+    autoGenerate: 'Auto-generate',
+    noRooms: 'No rooms yet',
+    selectOrCreate: 'Select or create a room to start chatting',
+    agents: 'Agents',
+    members: 'members',
+    roomCreated: 'Room created',
+    joined: 'Joined room',
+    joinFailed: 'Failed to join room',
+    inputPlaceholder: 'Type a message... (Enter to send)',
+    enterCode: 'Enter invite code',
   },
 
   // Usage

@@ -75,6 +75,7 @@ export default {
     usage: '사용량',
     channels: '채널',
     terminal: '터미널',
+    groupChat: '그룹 채팅',
     settings: '설정',
     connected: '연결됨',
     disconnected: '연결 끊김',
@@ -485,6 +486,26 @@ export default {
     closeSession: '이 세션을 닫으시겠습니까?',
     sessionExited: '종료됨',
     processExited: '프로세스가 종료되었습니다 (코드 {code})',
+  },
+
+  // 그룹 채팅
+  groupChat: {
+    title: '그룹 채팅',
+    createRoom: '방 만들기',
+    joinByCode: '코드로 참여',
+    roomName: '방 이름',
+    roomNamePlaceholder: '방 이름을 입력하세요',
+    inviteCode: '초대 코드',
+    autoGenerate: '자동 생성',
+    noRooms: '방이 없습니다',
+    selectOrCreate: '채팅을 시작하려면 방을 선택하거나 만드세요',
+    agents: '에이전트',
+    members: '멤버',
+    roomCreated: '방이 생성되었습니다',
+    joined: '방에 참여했습니다',
+    joinFailed: '방 참여에 실패했습니다',
+    inputPlaceholder: '메시지를 입력하세요... (Enter로 전송)',
+    enterCode: '초대 코드를 입력하세요',
   },
 
   // 사용량

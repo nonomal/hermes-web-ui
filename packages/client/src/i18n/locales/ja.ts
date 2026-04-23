@@ -75,6 +75,7 @@ export default {
     usage: '使用量',
     channels: 'チャンネル',
     terminal: 'ターミナル',
+    groupChat: 'グループチャット',
     settings: '設定',
     connected: '接続済み',
     disconnected: '未接続',
@@ -485,6 +486,26 @@ export default {
     closeSession: 'このセッションを閉じますか？',
     sessionExited: '終了しました',
     processExited: 'プロセスが終了しました（コード {code}）',
+  },
+
+  // グループチャット
+  groupChat: {
+    title: 'グループチャット',
+    createRoom: 'ルーム作成',
+    joinByCode: 'コードで参加',
+    roomName: 'ルーム名',
+    roomNamePlaceholder: 'ルーム名を入力',
+    inviteCode: '招待コード',
+    autoGenerate: '自動生成',
+    noRooms: 'ルームがありません',
+    selectOrCreate: 'チャットを開始するにはルームを選択または作成してください',
+    agents: 'エージェント',
+    members: 'メンバー',
+    roomCreated: 'ルームが作成されました',
+    joined: 'ルームに参加しました',
+    joinFailed: 'ルームへの参加に失敗しました',
+    inputPlaceholder: 'メッセージを入力... (Enterで送信)',
+    enterCode: '招待コードを入力',
   },
 
   // 使用統計

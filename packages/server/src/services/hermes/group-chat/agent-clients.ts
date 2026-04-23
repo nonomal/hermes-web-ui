@@ -48,17 +48,21 @@ class AgentClient {
     readonly agentId: string
     readonly profile: string
     readonly name: string
+    readonly description: string
     private socket: Socket | null = null
     private joinedRooms = new Set<string>()
     private handlers: AgentEventHandler
     private port: number = 8648
     private _reconnecting = false
     private gatewayManager: GatewayManager | null = null
+    private contextEngine: any = null
+    private storage: any = null
 
     constructor(config: AgentConfig, handlers: AgentEventHandler = {}) {
         this.agentId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
         this.profile = config.profile
         this.name = config.name
+        this.description = config.description
         this.handlers = handlers
     }
 
@@ -72,6 +76,14 @@ class AgentClient {
 
     setGatewayManager(manager: GatewayManager): void {
         this.gatewayManager = manager
+    }
+
+    setContextEngine(engine: any): void {
+        this.contextEngine = engine
+    }
+
+    setStorage(storage: any): void {
+        this.storage = storage
     }
 
     async connect(port = 8648): Promise<void> {
@@ -199,6 +211,32 @@ class AgentClient {
             // Notify room that agent is typing
             this.startTyping(roomId)
 
+            // Build compressed context if context engine is available
+            let conversationHistory: Array<{ role: string; content: string }> = []
+            let instructions: string | undefined
+
+            if (this.contextEngine && this.storage) {
+                try {
+                    const ctx = await this.contextEngine.buildContext({
+                        roomId,
+                        agentId: this.agentId,
+                        agentName: this.name,
+                        agentDescription: this.description,
+                        agentSocketId: this.socket?.id || '',
+                        roomName: roomId,
+                        memberNames: [],
+                        upstream,
+                        apiKey,
+                        currentMessage: msg,
+                    })
+                    conversationHistory = ctx.conversationHistory
+                    instructions = ctx.instructions
+                } catch (err: any) {
+                    console.warn(`[AgentClients] ${this.name}: context engine failed: ${err.message}`)
+                    // Degrade: continue without context
+                }
+            }
+
             // Generate unique session_id per agent per interaction
             const sessionId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 
@@ -212,6 +250,8 @@ class AgentClient {
                 body: JSON.stringify({
                     input: msg.content,
                     session_id: sessionId,
+                    ...(conversationHistory.length > 0 ? { conversation_history: conversationHistory } : {}),
+                    ...(instructions ? { instructions } : {}),
                 }),
                 signal: AbortSignal.timeout(120000),
             })
@@ -326,6 +366,9 @@ class AgentClient {
 
 export class AgentClients {
     private rooms = new Map<string, Map<string, AgentClient>>()
+    private _gatewayManager: GatewayManager | null = null
+    private _contextEngine: any = null
+    private _storage: any = null
 
     /**
      * Create an agent client and connect it to the server.
@@ -334,6 +377,12 @@ export class AgentClients {
     async createAgent(config: AgentConfig, handlers?: AgentEventHandler, port?: number): Promise<AgentClient> {
         const client = new AgentClient(config, handlers)
         await client.connect(port)
+
+        // Auto-apply stored references (fixes propagation for agents created after set*)
+        if (this._gatewayManager) client.setGatewayManager(this._gatewayManager)
+        if (this._contextEngine) client.setContextEngine(this._contextEngine)
+        if (this._storage) client.setStorage(this._storage)
+
         console.log(`[AgentClients] Connected: ${client.name} (${client.agentId})`)
         return client
     }
@@ -366,6 +415,11 @@ export class AgentClients {
             client.disconnect()
             room.delete(agentId)
             console.log(`[AgentClients] ${client.name} left room: ${roomId}`)
+
+            // Invalidate context engine cache for this agent
+            if (this._contextEngine) {
+                try { this._contextEngine.invalidateAgent(roomId, agentId) } catch { /* ignore */ }
+            }
         }
 
         if (room.size === 0) {
@@ -424,6 +478,11 @@ export class AgentClients {
         room.forEach((client) => client.disconnect())
         this.rooms.delete(roomId)
         console.log(`[AgentClients] All agents disconnected from room: ${roomId}`)
+
+        // Invalidate context engine cache for this room
+        if (this._contextEngine) {
+            try { this._contextEngine.invalidateRoom(roomId) } catch { /* ignore */ }
+        }
     }
 
     /**
@@ -441,8 +500,29 @@ export class AgentClients {
      * Set gateway manager for all existing and future agents.
      */
     setGatewayManager(manager: GatewayManager): void {
+        this._gatewayManager = manager
         this.rooms.forEach((room) => {
             room.forEach((client) => client.setGatewayManager(manager))
+        })
+    }
+
+    /**
+     * Set context engine for all existing and future agents.
+     */
+    setContextEngine(engine: any): void {
+        this._contextEngine = engine
+        this.rooms.forEach((room) => {
+            room.forEach((client) => client.setContextEngine(engine))
+        })
+    }
+
+    /**
+     * Set message storage for all existing and future agents.
+     */
+    setStorage(storage: any): void {
+        this._storage = storage
+        this.rooms.forEach((room) => {
+            room.forEach((client) => client.setStorage(storage))
         })
     }
 }
