@@ -52,7 +52,7 @@ export function connectGroupChat(): ReturnType<typeof io> {
     const baseUrl = getBaseUrlValue()
     const token = getApiKey()
 
-    socket = io(`${baseUrl}/api/hermes/group-chat`, {
+    socket = io(`${baseUrl}/api/hermes/group-chat/ws`, {
         auth: { token: token || undefined },
         transports: ['polling', 'websocket'],
         reconnection: true,

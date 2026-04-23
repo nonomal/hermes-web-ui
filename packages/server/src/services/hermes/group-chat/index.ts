@@ -202,7 +202,7 @@ export class GroupChatServer {
         this.storage.init()
 
         this.io = new Server(httpServer, {
-            path: '/api/hermes/group-chat',
+            path: '/api/hermes/group-chat/ws',
             cors: { origin: '*' },
             transports: ['websocket', 'polling'],
         })
