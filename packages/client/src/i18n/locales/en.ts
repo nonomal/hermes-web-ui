@@ -105,6 +105,12 @@ export default {
     noChangelog: 'No changelog available',
   },
 
+  // Drawer
+  drawer: {
+    terminal: 'Terminal',
+    files: 'Workspace',
+  },
+
   // Chat
   chat: {
     contextRemaining: 'remaining',
@@ -153,6 +159,7 @@ export default {
     renamed: 'Renamed',
     renameFailed: 'Rename failed',
     renameSession: 'Rename Session',
+    sessionNotFound: 'Session not found',
     enterNewTitle: 'Enter new title',
     workspace: 'Workspace',
     setWorkspace: 'Set Workspace',
@@ -405,6 +412,7 @@ export default {
     importInvalidFile: 'Please select a valid archive (.tar.gz, .tgz, .gz, .zip)',
     name: 'Profile Name',
     namePlaceholder: 'Lowercase letters, numbers, hyphens only',
+    nameValidation: 'Profile name can only contain lowercase letters, numbers, underscores, and hyphens',
     newName: 'New Name',
     newNamePlaceholder: 'Lowercase letters, numbers, hyphens',
     cloneFromCurrent: 'Clone from current profile',
@@ -518,6 +526,8 @@ export default {
       liveMonitorHumanOnly: 'Live monitor: show human sessions only',
       liveMonitorHumanOnlyHint: 'Hide sub-agent/session monitor noise in the Live monitor by default',
       atHourHint: 'Reset session at this hour daily',
+      requireAuth: 'Session Authorization',
+      requireAuthHint: 'Require authorization for session operations',
     },
     privacy: {
       redactPii: 'Redact PII',
@@ -621,6 +631,10 @@ export default {
     closeSession: 'Close this session?',
     sessionExited: 'Exited',
     processExited: 'Process exited with code {code}',
+    noSessions: 'No terminal sessions',
+    connectionFailed: 'Terminal service connection failed',
+    connectionClosed: 'Terminal connection closed',
+    connectionError: 'Terminal connection error',
   },
 
   // Group Chat
@@ -697,6 +711,7 @@ export default {
   // Files
   files: {
     title: 'Files',
+    fileTree: 'File Tree',
     tree: 'Directory Tree',
     list: 'File List',
     breadcrumbRoot: 'Home',
@@ -759,6 +774,11 @@ export default {
 
   // Changelog
   changelog: {
+    new_0_5_10_1: 'Automate Docker image builds on GitHub release with versioned tags (e.g., :v0.5.10)',
+    new_0_5_10_2: 'Add session authorization mode configuration: approvals.mode (off/manual)',
+    new_0_5_10_3: 'Add automatic OpenAPI documentation generation (94 endpoints across 24 tags)',
+    new_0_5_10_4: 'Enhance media rendering: support images, videos, and files in Markdown',
+    new_0_5_10_5: 'Optimize group chat prompts and fix media handling',
     new_0_5_6_1: 'Add voice playback feature with Web Speech API: manual button, auto-play toggle, rainbow border animation, and mobile optimization',
     new_0_5_6_2: 'Add robust LLM JSON parser with tolerance for Python format and extract text from streaming events',
     new_0_5_6_3: 'Add Skills enhancements: usage stats, source filtering, archived skills, provenance, and pin toggle',
@@ -767,6 +787,16 @@ export default {
     new_0_5_6_6: 'Redesigned attachment handling using Anthropic-style ContentBlock array format with type discriminated unions (text, image, file)',
     new_0_5_6_7: 'Added frontend file download functionality supporting both ContentBlock and Markdown formats with authentication',
     new_0_5_6_8: 'Fixed multi-process conflict causing SQLite database resets by eliminating redundant nodemon instances',
+    new_0_5_9_1: 'Unify profile management across the application with consistent API and state management',
+    new_0_5_9_2: 'Add GitHub issue and pull request templates for better contribution workflow',
+    new_0_5_8_1: 'Add drawer panel with mobile sidebar support and customizable rainbow button',
+    new_0_5_8_2: 'Fix profile switching state sync issue with immediate UI update and backend verification',
+    new_0_5_8_3: 'Filter special characters and emoji in speech playback for better text-to-speech',
+    new_0_5_8_4: 'Add missing i18n key and unify session data source to prioritize database',
+    new_0_5_8_5: 'Optimize Vite build configuration for faster Docker builds with esbuild and chunk splitting',
+    new_0_5_7_1: 'Optimize context compression to support rich content (images, files) with improved tool message handling',
+    new_0_5_7_2: 'Improve session sync with batch inserts and transaction protection for data consistency',
+    new_0_5_7_3: 'Fix usage.updated event reception to ensure accurate token tracking across runs',
     new_0_5_5_1: '🎉 Happy Labor Day! No work this Labor Day, please bear with us if there are any issues',
     new_0_5_5_2: 'Add History page for browsing Hermes session history',
     new_0_5_5_3: 'History page manages session state independently without interfering with active chat',
@@ -801,18 +831,6 @@ export default {
     new_0_5_1_7: 'Optimize model list layout in Provider cards (fixed height, tag alignment)',
     new_0_5_1_8: 'Fix display issue with single-line long code blocks in user messages',
     new_0_5_1_9: 'Fix web terminal rendering errors in Docker deployment',
-    new_0_5_0_1: 'Self-built chat database and context compression',
-    new_0_5_0_2: 'Sessions use WebSocket form, enhanced resume capability',
-    new_0_4_8_1: 'Safe Mermaid diagram rendering with async render and timeout fallback',
-    new_0_4_8_2: 'Fix nested markdown fence rendering truncation',
-    new_0_4_8_3: 'Fix compressed session lineage projection and search',
-    new_0_4_8_4: 'Optimize session list N+1 queries and fix search 500 on non-CJK input',
-    new_0_4_8_5: 'Fix forced scroll to bottom when switching back from other tabs',
-    new_0_4_8_6: 'Smooth session switch with loading transition overlay',
-    new_0_4_8_7: 'Fix login token validation using Hermes session endpoint',
-    new_0_4_8_8: 'Fix image attachments broken after page refresh (blob URL persistence)',
-    new_0_4_8_9: 'Click image attachments to preview in fullscreen overlay',
-    new_0_4_8_10: 'Move upload directory from temp to ~/.hermes-web-ui/upload',
     new_0_4_7_1: 'Real-time streaming display of thinking/reasoning blocks',
     new_0_4_7_2: 'Skip prepare script during Docker build',
     new_0_4_7_3: 'Group chat mobile UX improvements and UI polish',

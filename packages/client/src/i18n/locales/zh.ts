@@ -105,6 +105,12 @@ export default {
     noChangelog: '暂无更新日志',
   },
 
+  // 抽屉
+  drawer: {
+    terminal: '终端',
+    files: '工作区',
+  },
+
   // 对话
   chat: {
     contextRemaining: '剩余',
@@ -153,6 +159,7 @@ export default {
     renamed: '已重命名',
     renameFailed: '重命名失败',
     renameSession: '重命名会话',
+    sessionNotFound: '会话未找到',
     enterNewTitle: '输入新标题',
     workspace: '工作区',
     setWorkspace: '设置工作区',
@@ -397,6 +404,7 @@ export default {
     importInvalidFile: '请选择有效的归档文件 (.tar.gz, .tgz, .gz, .zip)',
     name: '配置名称',
     namePlaceholder: '仅限小写字母、数字、连字符',
+    nameValidation: '配置名称只能包含小写字母、数字、下划线和连字符',
     newName: '新名称',
     newNamePlaceholder: '小写字母、数字、连字符',
     cloneFromCurrent: '从当前配置克隆',
@@ -510,6 +518,8 @@ export default {
       liveMonitorHumanOnly: '实时监看：仅显示人类会话',
       liveMonitorHumanOnlyHint: '在实时监看中默认隐藏子代理和会话监看噪音',
       atHourHint: '每天在指定小时重置会话',
+      requireAuth: '会话授权',
+      requireAuthHint: '修改会话操作是否授权',
     },
     privacy: {
       redactPii: '脱敏 PII',
@@ -623,6 +633,10 @@ export default {
     closeSession: '关闭此会话？',
     sessionExited: '已退出',
     processExited: '进程已退出，代码 {code}',
+    noSessions: '暂无终端会话',
+    connectionFailed: '终端服务连接失败',
+    connectionClosed: '终端连接已关闭',
+    connectionError: '终端连接错误',
   },
 
   // 群聊
@@ -699,6 +713,7 @@ export default {
   // 文件管理
   files: {
     title: '文件',
+    fileTree: '文件树',
     tree: '目录树',
     list: '文件列表',
     breadcrumbRoot: '根目录',
@@ -768,7 +783,22 @@ export default {
     new_0_5_6_5: '优化会话历史范围说明，改进聊天和历史视图的描述',
     new_0_5_6_6: '重新设计附件处理，采用 Anthropic 风格的 ContentBlock 数组格式，支持类型区分（文本、图片、文件）',
     new_0_5_6_7: '新增前端文件下载功能，支持 ContentBlock 和 Markdown 两种格式，带身份验证',
+    new_0_5_10_1: 'GitHub Release 时自动构建 Docker 镜像并添加版本标签（如 :v0.5.10）',
+    new_0_5_10_2: '新增会话授权模式配置：approvals.mode（关闭/手动）',
+    new_0_5_10_3: '新增自动 OpenAPI 文档生成（94 个端点，24 个标签）',
+    new_0_5_10_4: '增强媒体渲染：支持 Markdown 中的图片、视频和文件',
+    new_0_5_10_5: '优化群聊提示并修复媒体处理',
     new_0_5_6_8: '修复多进程冲突导致的 SQLite 数据库重置问题，清理冗余 nodemon 进程',
+    new_0_5_9_1: '统一应用程序中的 profile 管理，提供一致的 API 和状态管理',
+    new_0_5_9_2: '添加 GitHub issue 和 pull request 模板以改进贡献工作流程',
+    new_0_5_8_1: '新增抽屉面板支持移动端侧边栏，可自定义彩虹边框按钮',
+    new_0_5_8_2: '修复 profile 切换状态同步问题，立即更新 UI 并验证后端状态',
+    new_0_5_8_3: '过滤语音播放中的特殊字符和表情符号，改善语音合成效果',
+    new_0_5_8_4: '添加缺失的 i18n 键并统一会话数据源，优先使用数据库',
+    new_0_5_8_5: '优化 Vite 构建配置加快 Docker 构建，使用 esbuild 和代码分割',
+    new_0_5_7_1: '优化上下文压缩以支持富内容（图片、文件），改进工具消息处理',
+    new_0_5_7_2: '改进会话同步，使用批量插入和事务保护确保数据一致性',
+    new_0_5_7_3: '修复 usage.updated 事件接收，确保跨运行准确追踪 token',
     new_0_5_5_1: '🎉 五一劳动节快乐！这个劳动节就不劳动啦，如果有问题大家忍忍',
     new_0_5_5_2: '新增历史页面，用于浏览 Hermes 会话历史记录',
     new_0_5_5_3: '历史页面独立管理会话状态，不影响当前聊天页面的活动会话',
@@ -803,9 +833,6 @@ export default {
     new_0_5_1_7: '优化 Provider 卡片中模型列表布局（固定高度、标签对齐）',
     new_0_5_1_8: '修复用户消息中长代码块单行超长的显示问题',
     new_0_5_1_9: '修复 Web 终端在 Docker 部署后的展示报错',
-    new_0_5_0_1: '自建聊天数据库和上下文压缩',
-    new_0_5_0_2: '会话使用websocket形式，增强断点续传',
-    new_0_4_8_1: '安全渲染 Mermaid 图表，支持异步渲染和超时降级',
     new_0_4_8_2: '修复嵌套 Markdown 代码块导致渲染截断',
     new_0_4_8_3: '修复压缩续接会话投影和搜索问题',
     new_0_4_8_4: '优化会话列表 N+1 查询，修复非 CJK 搜索 500 错误',

@@ -95,6 +95,12 @@ export default {
     noChangelog: '更新履歴はありません',
   },
 
+  // ドロワー
+  drawer: {
+    terminal: 'ターミナル',
+    files: 'ワークスペース',
+  },
+
   // チャット
   chat: {
     contextRemaining: '残り',
@@ -130,6 +136,7 @@ export default {
     renamed: '名前を変更しました',
     renameFailed: '名前の変更に失敗しました',
     renameSession: 'セッション名の変更',
+    sessionNotFound: 'セッションが見つかりません',
     enterNewTitle: '新しいタイトルを入力',
     other: 'その他',
     runFailed: '実行に失敗しました',
@@ -363,6 +370,7 @@ export default {
     importInvalidFile: '有効なアーカイブファイルを選択してください (.tar.gz, .tgz, .gz, .zip)',
     name: 'プロファイル名',
     namePlaceholder: '英数字、ハイフンのみ',
+    nameValidation: 'プロファイル名には小文字、数字、アンダースコア、ハイフンのみ使用できます',
     newName: '新しい名前',
     newNamePlaceholder: '新しい名前を入力',
     cloneFromCurrent: '現在のプロファイルから複製',
@@ -467,6 +475,8 @@ export default {
       liveMonitorHumanOnly: 'ライブモニター: 人間のセッションのみ表示',
       liveMonitorHumanOnlyHint: 'ライブモニターでサブエージェントやセッション監視ノイズを既定で隠します',
       atHourHint: '毎日指定時刻にセッションをリセット',
+      requireAuth: 'セッション認証',
+      requireAuthHint: 'セッション操作に認証を必要とする',
     },
     privacy: {
       redactPii: '個人情報のマスキング',
@@ -597,6 +607,22 @@ export default {
     new_0_5_6_6: 'AnthropicスタイルのContentBlock配列形式（テキスト、画像、ファイル）を使用して添付ファイル処理を再設計',
     new_0_5_6_7: 'ContentBlockおよびMarkdown形式をサポートし、認証付きのフロントエンドファイルダウンロード機能を追加',
     new_0_5_6_8: '重複するnodemonインスタンスを削除し、SQLiteデータベースのリセットを引き起こすマルチプロセス競合を修正',
+    new_0_5_9_1: 'アプリケーション全体でプロファイル管理を統一し、一貫したAPIと状態管理を提供',
+
+    new_0_5_10_1: 'GitHubリリースでDockerイメージのビルドを自動化し、バージョンタグを追加（例：:v0.5.10）',
+    new_0_5_10_2: 'セッション承認モード設定を追加：approvals.mode（オフ/手動）',
+    new_0_5_10_3: 'OpenAPI ドキュメントの自動生成を追加（94 エンドポイント、24 タグ）',
+    new_0_5_10_4: 'メディア レンダリングを強化：Markdown での画像、動画、ファイルのサポート',
+    new_0_5_10_5: 'グループチャットのプロンプトを最適化し、メディア処理を修正',
+    new_0_5_9_2: 'より良いコントリビューションワークフローのためにGitHubイシューとプルリクエストテンプレートを追加',
+    new_0_5_8_1: 'モバイルサイドバーサポートとカスタマイズ可能なレインボーボタン付きドロワーパネルを追加',
+    new_0_5_8_2: 'プロファイル切り替え状態同期問題を修正し、UIを即座に更新してバックエンドを検証',
+    new_0_5_8_3: '音声合成を改善するため、音声再生の特殊文字と絵文字をフィルタリング',
+    new_0_5_8_4: '不足しているi18nキーを追加し、セッションデータソースを統一してデータベースを優先',
+    new_0_5_8_5: 'esbuildとチャンク分割を使用してDockerビルドを高速化するためにViteビルド設定を最適化',
+    new_0_5_7_1: 'リッチコンテンツ（画像、ファイル）をサポートするためのコンテキスト圧縮を最適化し、ツールメッセージ処理を改善',
+    new_0_5_7_2: 'バッチ挿入とトランザクション保護でデータ整合性を確保しながらセッション同期を改善',
+    new_0_5_7_3: '実行間で正確なトークン追跡を確保するため、usage.updatedイベントの受信を修正',
     new_0_5_5_1: '🎉 労働者の日！今日はお休みです、何卒ご理解ください',
     new_0_5_5_2: 'Hermesセッション履歴ページを追加',
     new_0_5_5_3: '履歴ページはアクティブチャットに干渉せずにセッション管理',
@@ -631,9 +657,6 @@ export default {
     new_0_5_1_7: 'Optimize model list layout in Provider cards (fixed height, tag alignment)',
     new_0_5_1_8: 'Fix display issue with single-line long code blocks in user messages',
     new_0_5_1_9: 'Fix web terminal rendering errors in Docker deployment',
-    new_0_5_0_1: 'Self-built chat database and context compression: empty chat history on first entry is expected',
-    new_0_5_0_2: 'Sessions use WebSocket form, enhanced resume capability',
-    new_0_4_8_1: 'Safe Mermaid diagram rendering with async render and timeout fallback',
     new_0_4_8_2: 'Fix nested markdown fence rendering truncation',
     new_0_4_8_3: 'Fix compressed session lineage projection and search',
     new_0_4_8_4: 'Optimize session list N+1 queries and fix search 500 on non-CJK input',
