@@ -40,7 +40,9 @@ async function handleSwitch() {
   try {
     const ok = await profilesStore.switchProfile(props.profile.name)
     if (ok) {
-      window.location.reload()
+      message.success(t('profiles.switchSuccess', { name: props.profile.name }))
+      // Reload to refresh all profile-dependent data
+      setTimeout(() => window.location.reload(), 500)
     } else {
       message.error(t('profiles.switchFailed'))
     }
@@ -94,10 +96,6 @@ async function handleExport() {
       <div class="info-row">
         <span class="info-label">{{ t('profiles.model') }}</span>
         <code class="info-value mono">{{ profile.model }}</code>
-      </div>
-      <div class="info-row">
-        <span class="info-label">{{ t('profiles.gateway') }}</span>
-        <code class="info-value mono">{{ profile.gateway }}</code>
       </div>
     </div>
 

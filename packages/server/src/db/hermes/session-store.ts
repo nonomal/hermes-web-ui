@@ -12,6 +12,7 @@ export interface HermesSessionRow {
   source: string
   user_id: string | null
   model: string
+  provider: string
   title: string | null
   started_at: number
   ended_at: number | null
@@ -45,7 +46,6 @@ export interface HermesMessageRow {
   finish_reason: string | null
   reasoning: string | null
   reasoning_details?: string | null
-  codex_reasoning_items?: string | null
   reasoning_content?: string | null
 }
 
@@ -86,6 +86,7 @@ function mapSessionRow(row: Record<string, unknown>): HermesSessionRow {
     source: String(row.source || 'api_server'),
     user_id: row.user_id != null ? String(row.user_id) : null,
     model: String(row.model || ''),
+    provider: String(row.provider || ''),
     title,
     started_at: Number(row.started_at || 0),
     ended_at: row.ended_at != null ? Number(row.ended_at) : null,
@@ -121,7 +122,6 @@ function mapMessageRow(row: Record<string, unknown>): HermesMessageRow {
     finish_reason: row.finish_reason != null ? String(row.finish_reason) : null,
     reasoning: row.reasoning != null ? String(row.reasoning) : null,
     reasoning_details: row.reasoning_details != null ? String(row.reasoning_details) : null,
-    codex_reasoning_items: row.codex_reasoning_items != null ? String(row.codex_reasoning_items) : null,
     reasoning_content: row.reasoning_content != null ? String(row.reasoning_content) : null,
   }
 }
@@ -131,15 +131,18 @@ function mapMessageRow(row: Record<string, unknown>): HermesMessageRow {
 export function createSession(data: {
   id: string
   profile?: string
+  source?: string
   model?: string
+  provider?: string
   title?: string
   workspace?: string
 }): HermesSessionRow {
   const now = Math.floor(Date.now() / 1000)
+  const source = data.source || 'api_server'
   if (!isSqliteAvailable()) {
     return {
-      id: data.id, profile: data.profile || 'default', source: 'api_server',
-      user_id: null, model: data.model || '', title: data.title || null,
+      id: data.id, profile: data.profile || 'default', source,
+      user_id: null, model: data.model || '', provider: data.provider || '', title: data.title || null,
       started_at: now, ended_at: null, end_reason: null,
       message_count: 0, tool_call_count: 0,
       input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, reasoning_tokens: 0,
@@ -149,9 +152,9 @@ export function createSession(data: {
   }
   const db = getDb()!
   db.prepare(
-    `INSERT INTO ${SESSIONS_TABLE} (id, profile, source, model, title, started_at, last_active, workspace)
-     VALUES (?, ?, 'api_server', ?, ?, ?, ?, ?)`,
-  ).run(data.id, data.profile || 'default', data.model || '', data.title || null, now, now, data.workspace || null)
+    `INSERT INTO ${SESSIONS_TABLE} (id, profile, source, model, provider, title, started_at, last_active, workspace)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(data.id, data.profile || 'default', source, data.model || '', data.provider || '', data.title || null, now, now, data.workspace || null)
   return getSession(data.id)!
 }
 
@@ -201,6 +204,14 @@ export function deleteSession(id: string): boolean {
   return result.changes > 0
 }
 
+export function clearSessionMessages(id: string): number {
+  if (!isSqliteAvailable()) return 0
+  const db = getDb()!
+  const result = db.prepare(`DELETE FROM ${MESSAGES_TABLE} WHERE session_id = ?`).run(id)
+  updateSessionStats(id)
+  return Number(result.changes)
+}
+
 export function renameSession(id: string, title: string): boolean {
   if (!isSqliteAvailable()) return false
   const db = getDb()!
@@ -208,9 +219,10 @@ export function renameSession(id: string, title: string): boolean {
   return result.changes > 0
 }
 
-export function listSessions(profile: string, source?: string, limit = 2000): HermesSessionRow[] {
+export function listSessions(profile?: string, source?: string, limit = 2000): HermesSessionRow[] {
   if (!isSqliteAvailable()) return []
   const db = getDb()!
+  const profileFilter = profile?.trim()
 
   // Use a subquery to generate preview from first user message if not set
   const sql = `
@@ -228,13 +240,17 @@ export function listSessions(profile: string, source?: string, limit = 2000): He
         ''
       ) AS preview
     FROM ${SESSIONS_TABLE} s
-    WHERE s.profile = ?
+    WHERE 1 = 1
+      ${profileFilter ? 'AND s.profile = ?' : ''}
       ${source ? 'AND s.source = ?' : ''}
     ORDER BY s.last_active DESC
     LIMIT ?
   `
 
-  const params: any[] = [profile]
+  const params: any[] = []
+  if (profileFilter) {
+    params.push(profileFilter)
+  }
   if (source) {
     params.push(source)
   }
@@ -318,7 +334,7 @@ export function getSessionDetail(id: string): HermesSessionDetailRow | null {
   const sessionRow = db.prepare(`SELECT * FROM ${SESSIONS_TABLE} WHERE id = ?`).get(id) as Record<string, unknown> | undefined
   if (!sessionRow) return null
   const msgRows = db.prepare(
-    `SELECT * FROM ${MESSAGES_TABLE} WHERE session_id = ? ORDER BY timestamp, id`,
+    `SELECT * FROM ${MESSAGES_TABLE} WHERE session_id = ? ORDER BY id`,
   ).all(id) as Record<string, unknown>[]
   const session = mapSessionRow(sessionRow)
   return {
@@ -343,21 +359,20 @@ export function addMessage(msg: {
   reasoning?: string | null
   reasoning_details?: string | null
   reasoning_content?: string | null
-  codex_reasoning_items?: string | null
 }): number | undefined {
   if (!isSqliteAvailable()) return undefined
   const db = getDb()!
   const toolCallsJson = msg.tool_calls ? JSON.stringify(msg.tool_calls) : null
   const result = db.prepare(
-    `INSERT INTO ${MESSAGES_TABLE} (session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, token_count, finish_reason, reasoning, reasoning_details, reasoning_content, codex_reasoning_items)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO ${MESSAGES_TABLE} (session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, token_count, finish_reason, reasoning, reasoning_details, reasoning_content)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     msg.session_id, msg.role, msg.content,
     msg.tool_call_id ?? null, toolCallsJson, msg.tool_name ?? null,
     msg.timestamp ?? Math.floor(Date.now() / 1000),
     msg.token_count ?? null, msg.finish_reason ?? null,
     msg.reasoning ?? null, msg.reasoning_details ?? null,
-    msg.reasoning_content ?? null, msg.codex_reasoning_items ?? null,
+    msg.reasoning_content ?? null,
   )
   return result.lastInsertRowid as number
 }
@@ -375,13 +390,12 @@ export function addMessages(msgs: Array<{
   reasoning?: string | null
   reasoning_details?: string | null
   reasoning_content?: string | null
-  codex_reasoning_items?: string | null
 }>): void {
   if (!isSqliteAvailable() || msgs.length === 0) return
   const db = getDb()!
   const insert = db.prepare(
-    `INSERT INTO ${MESSAGES_TABLE} (session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, token_count, finish_reason, reasoning, reasoning_details, reasoning_content, codex_reasoning_items)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO ${MESSAGES_TABLE} (session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, token_count, finish_reason, reasoning, reasoning_details, reasoning_content)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   db.exec('BEGIN')
   try {
@@ -393,7 +407,7 @@ export function addMessages(msgs: Array<{
         msg.timestamp ?? Math.floor(Date.now() / 1000),
         msg.token_count ?? null, msg.finish_reason ?? null,
         msg.reasoning ?? null, msg.reasoning_details ?? null,
-        msg.reasoning_content ?? null, msg.codex_reasoning_items ?? null,
+        msg.reasoning_content ?? null,
       )
     }
     db.exec('COMMIT')
@@ -445,9 +459,10 @@ export function getSessionDetailPaginated(
   ).get(id) as { total: number } | undefined
   const total = countResult?.total || 0
 
-  // Get paginated messages (newest first from DB, then reverse)
+  // Get paginated messages (newest first from DB, then reverse).
+  // Timestamp precision is mixed across message sources; id is insertion order.
   const msgRows = db.prepare(
-    `SELECT * FROM ${MESSAGES_TABLE} WHERE session_id = ? ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?`,
+    `SELECT * FROM ${MESSAGES_TABLE} WHERE session_id = ? ORDER BY id DESC LIMIT ? OFFSET ?`,
   ).all(id, limit, offset) as Record<string, unknown>[]
 
   const session = mapSessionRow(sessionRow)
@@ -461,12 +476,4 @@ export function getSessionDetailPaginated(
     limit,
     hasMore: offset + messages.length < total,
   }
-}
-
-// --- Session store mode ---
-
-import { config } from '../../config'
-
-export function useLocalSessionStore(): boolean {
-  return config.sessionStore === 'local'
 }

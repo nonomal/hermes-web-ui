@@ -26,6 +26,11 @@ const router = createRouter({
       component: () => import('@/views/hermes/JobsView.vue'),
     },
     {
+      path: '/hermes/kanban',
+      name: 'hermes.kanban',
+      component: () => import('@/views/hermes/KanbanView.vue'),
+    },
+    {
       path: '/hermes/models',
       name: 'hermes.models',
       component: () => import('@/views/hermes/ModelsView.vue'),
@@ -46,9 +51,19 @@ const router = createRouter({
       component: () => import('@/views/hermes/UsageView.vue'),
     },
     {
+      path: '/hermes/skills-usage',
+      name: 'hermes.skillsUsage',
+      component: () => import('@/views/hermes/SkillsUsageView.vue'),
+    },
+    {
       path: '/hermes/skills',
       name: 'hermes.skills',
       component: () => import('@/views/hermes/SkillsView.vue'),
+    },
+    {
+      path: '/hermes/plugins',
+      name: 'hermes.plugins',
+      component: () => import('@/views/hermes/PluginsView.vue'),
     },
     {
       path: '/hermes/memory',
@@ -59,11 +74,6 @@ const router = createRouter({
       path: '/hermes/settings',
       name: 'hermes.settings',
       component: () => import('@/views/hermes/SettingsView.vue'),
-    },
-    {
-      path: '/hermes/gateways',
-      name: 'hermes.gateways',
-      component: () => import('@/views/hermes/GatewaysView.vue'),
     },
     {
       path: '/hermes/channels',

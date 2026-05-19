@@ -245,6 +245,9 @@ let activeTerm: Terminal | null = null;
 let activeFitAddon: FitAddon | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let mobileQuery: MediaQueryList | null = null;
+let touchScrollLastY: number | null = null;
+let touchScrollRemainder = 0;
+const TOUCH_SCROLL_LINE_PX = 18;
 
 // ─── Computed ──────────────────────────────────────────────────
 
@@ -265,6 +268,13 @@ const terminalBg = computed(
 
 // ─── WebSocket ──────────────────────────────────────────────────
 
+function formatHostForPort(hostname: string, port: number): string {
+  if (hostname.startsWith("[") && hostname.endsWith("]")) {
+    return `${hostname}:${port}`;
+  }
+  return hostname.includes(":") ? `[${hostname}]:${port}` : `${hostname}:${port}`;
+}
+
 function buildWsUrl(): string {
   const token = getApiKey();
   const base = getBaseUrlValue();
@@ -282,7 +292,7 @@ function buildWsUrl(): string {
 
   // Dev mode: connect directly to backend port; Production: same host
   const host = import.meta.env.DEV
-    ? `${location.hostname}:8648`
+    ? formatHostForPort(location.hostname, 8648)
     : location.host;
   return `${wsProtocol}//${host}/api/hermes/terminal${token ? `?token=${encodeURIComponent(token)}` : ""}`;
 }
@@ -488,6 +498,35 @@ function sendResize() {
   } catch {}
 }
 
+function handleTerminalTouchStart(event: TouchEvent) {
+  if (event.touches.length !== 1) {
+    touchScrollLastY = null;
+    touchScrollRemainder = 0;
+    return;
+  }
+  touchScrollLastY = event.touches[0].clientY;
+  touchScrollRemainder = 0;
+}
+
+function handleTerminalTouchMove(event: TouchEvent) {
+  if (!activeTerm || event.touches.length !== 1 || touchScrollLastY === null) return;
+  const nextY = event.touches[0].clientY;
+  touchScrollRemainder += touchScrollLastY - nextY;
+  touchScrollLastY = nextY;
+
+  const lines = Math.trunc(touchScrollRemainder / TOUCH_SCROLL_LINE_PX);
+  if (lines === 0) return;
+
+  activeTerm.scrollLines(lines);
+  touchScrollRemainder -= lines * TOUCH_SCROLL_LINE_PX;
+  event.preventDefault();
+}
+
+function handleTerminalTouchEnd() {
+  touchScrollLastY = null;
+  touchScrollRemainder = 0;
+}
+
 // ─── Theme ───────────────────────────────────────────────────────
 
 function applyTheme(themeName: string) {
@@ -682,7 +721,15 @@ onUnmounted(() => {
         </div>
       </header>
       <div class="terminal-container">
-        <div ref="terminalRef" class="terminal-xterm" :style="{ backgroundColor: terminalBg }" />
+        <div
+          ref="terminalRef"
+          class="terminal-xterm"
+          :style="{ backgroundColor: terminalBg }"
+          @touchstart="handleTerminalTouchStart"
+          @touchmove="handleTerminalTouchMove"
+          @touchend="handleTerminalTouchEnd"
+          @touchcancel="handleTerminalTouchEnd"
+        />
       </div>
     </div>
   </div>
@@ -973,6 +1020,19 @@ onUnmounted(() => {
 // ─── Mobile ─────────────────────────────────────────────────────
 
 @media (max-width: $breakpoint-mobile) {
+  .terminal-panel {
+    height: calc(100 * var(--vh));
+    max-height: calc(100 * var(--vh));
+  }
+
+  .terminal-main {
+    min-height: 0;
+  }
+
+  .terminal-container {
+    margin-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
   .session-close-btn {
     display: flex;
   }
@@ -1004,6 +1064,20 @@ onUnmounted(() => {
     left: 0;
     right: 0;
     bottom: 0;
+
+    :deep(.xterm-viewport),
+    :deep(.xterm-scrollable-element) {
+      touch-action: pan-y;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      scrollbar-width: thin !important;
+    }
+
+    :deep(.xterm-viewport::-webkit-scrollbar),
+    :deep(.xterm-scrollable-element::-webkit-scrollbar) {
+      display: block !important;
+      width: 6px !important;
+    }
   }
 }
 </style>

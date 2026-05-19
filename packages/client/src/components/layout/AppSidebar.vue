@@ -22,6 +22,12 @@ const logoPath = '/logo.png';
 
 const collapsedGroups = reactive<Record<string, boolean>>({});
 
+type SidebarGroupKey = "Conversation" | "Agent" | "Monitoring" | "System";
+
+function groupLabel(key: SidebarGroupKey) {
+  return t(`sidebar.group${key}${appStore.sidebarCollapsed ? "Short" : ""}`);
+}
+
 function toggleGroup(key: string) {
   collapsedGroups[key] = !collapsedGroups[key];
 }
@@ -41,6 +47,10 @@ async function handleUpdate() {
   } else {
     message.error(t('sidebar.updateFailed'));
   }
+}
+
+function handleReloadClient() {
+  appStore.reloadClient();
 }
 
 function handleLogout() {
@@ -75,12 +85,12 @@ function openChangelog() {
       <!-- Conversation -->
       <div class="nav-group">
         <div class="nav-group-label" @click="toggleGroup('conversation')">
-          <span>{{ t("sidebar.groupConversation") }}</span>
+          <span>{{ groupLabel("Conversation") }}</span>
           <svg class="nav-group-arrow" :class="{ collapsed: isGroupCollapsed('conversation') }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </div>
-        <div v-show="!isGroupCollapsed('conversation')">
+        <div v-show="!isGroupCollapsed('conversation')" class="nav-group-items">
           <button class="nav-item" :class="{ active: selectedKey === 'hermes.chat' }" @click="handleNav('hermes.chat')">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -110,18 +120,22 @@ function openChangelog() {
             </svg>
             <span>{{ t("sidebar.search") }}</span>
           </button>
+          <a class="nav-item fun-link" href="https://apikey.fun/register?aff=LIBAPI" target="_blank" rel="noopener noreferrer">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            <span>{{ t('sidebar.apiRelay') }}</span>
+          </a>
         </div>
       </div>
 
       <!-- Agent -->
       <div class="nav-group">
         <div class="nav-group-label" @click="toggleGroup('agent')">
-          <span>{{ t("sidebar.groupAgent") }}</span>
+          <span>{{ groupLabel("Agent") }}</span>
           <svg class="nav-group-arrow" :class="{ collapsed: isGroupCollapsed('agent') }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </div>
-        <div v-show="!isGroupCollapsed('agent')">
+        <div v-show="!isGroupCollapsed('agent')" class="nav-group-items">
           <button class="nav-item" :class="{ active: selectedKey === 'hermes.jobs' }" @click="handleNav('hermes.jobs')">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -130,6 +144,14 @@ function openChangelog() {
               <line x1="3" y1="10" x2="21" y2="10" />
             </svg>
             <span>{{ t("sidebar.jobs") }}</span>
+          </button>
+          <button class="nav-item" :class="{ active: selectedKey === 'hermes.kanban' }" @click="handleNav('hermes.kanban')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="5" height="18" rx="1" />
+              <rect x="10" y="3" width="5" height="12" rx="1" />
+              <rect x="17" y="3" width="5" height="18" rx="1" />
+            </svg>
+            <span>{{ t("sidebar.kanban") }}</span>
           </button>
           <button class="nav-item" :class="{ active: selectedKey === 'hermes.channels' }" @click="handleNav('hermes.channels')">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -144,6 +166,13 @@ function openChangelog() {
               <polyline points="2 12 12 17 22 12" />
             </svg>
             <span>{{ t("sidebar.skills") }}</span>
+          </button>
+          <button class="nav-item" :class="{ active: selectedKey === 'hermes.plugins' }" @click="handleNav('hermes.plugins')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l2.1-2.1a4 4 0 0 1-5.3 5.3l-7.8 7.8a2.1 2.1 0 0 1-3-3l7.8-7.8a4 4 0 0 1 5.3-5.3l-2.1 2.1z" />
+              <path d="M5 19l1-1" />
+            </svg>
+            <span>{{ t("sidebar.plugins") }}</span>
           </button>
           <button class="nav-item" :class="{ active: selectedKey === 'hermes.memory' }" @click="handleNav('hermes.memory')">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -173,12 +202,12 @@ function openChangelog() {
       <!-- Monitoring -->
       <div class="nav-group">
         <div class="nav-group-label" @click="toggleGroup('monitoring')">
-          <span>{{ t("sidebar.groupMonitoring") }}</span>
+          <span>{{ groupLabel("Monitoring") }}</span>
           <svg class="nav-group-arrow" :class="{ collapsed: isGroupCollapsed('monitoring') }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </div>
-        <div v-show="!isGroupCollapsed('monitoring')">
+        <div v-show="!isGroupCollapsed('monitoring')" class="nav-group-items">
           <button class="nav-item" :class="{ active: selectedKey === 'hermes.logs' }" @click="handleNav('hermes.logs')">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -197,30 +226,11 @@ function openChangelog() {
             </svg>
             <span>{{ t("sidebar.usage") }}</span>
           </button>
-        </div>
-      </div>
-
-      <!-- Tools -->
-      <div class="nav-group">
-        <div class="nav-group-label" @click="toggleGroup('tools')">
-          <span>{{ t("sidebar.groupTools") }}</span>
-          <svg class="nav-group-arrow" :class="{ collapsed: isGroupCollapsed('tools') }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </div>
-        <div v-show="!isGroupCollapsed('tools')">
-          <button class="nav-item" :class="{ active: selectedKey === 'hermes.terminal' }" @click="handleNav('hermes.terminal')">
+          <button class="nav-item" :class="{ active: selectedKey === 'hermes.skillsUsage' }" @click="handleNav('hermes.skillsUsage')">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="4 17 10 11 4 5" />
-              <line x1="12" y1="19" x2="20" y2="19" />
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
             </svg>
-            <span>{{ t("sidebar.terminal") }}</span>
-          </button>
-          <button class="nav-item" :class="{ active: selectedKey === 'hermes.files' }" @click="handleNav('hermes.files')">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-            </svg>
-            <span>{{ t("sidebar.files") }}</span>
+            <span>{{ t("sidebar.skillsUsage") }}</span>
           </button>
         </div>
       </div>
@@ -228,21 +238,12 @@ function openChangelog() {
       <!-- System -->
       <div class="nav-group">
         <div class="nav-group-label" @click="toggleGroup('system')">
-          <span>{{ t("sidebar.groupSystem") }}</span>
+          <span>{{ groupLabel("System") }}</span>
           <svg class="nav-group-arrow" :class="{ collapsed: isGroupCollapsed('system') }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </div>
-        <div v-show="!isGroupCollapsed('system')">
-          <button class="nav-item" :class="{ active: selectedKey === 'hermes.gateways' }" @click="handleNav('hermes.gateways')">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
-              <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
-              <line x1="6" y1="6" x2="6.01" y2="6" />
-              <line x1="6" y1="18" x2="6.01" y2="18" />
-            </svg>
-            <span>{{ t("sidebar.gateways") }}</span>
-          </button>
+        <div v-show="!isGroupCollapsed('system')" class="nav-group-items">
           <button class="nav-item" :class="{ active: selectedKey === 'hermes.profiles' }" @click="handleNav('hermes.profiles')">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -291,12 +292,20 @@ function openChangelog() {
         <LanguageSwitch />
       </div>
       <div class="version-info">
-        <a class="github-link" href="https://github.com/EKKOLearnAI/hermes-web-ui" target="_blank" rel="noopener noreferrer" title="GitHub">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-        </a>
-        <span class="version-text" @click="openChangelog">Hermes Web UI v{{ appStore.serverVersion || "0.1.0" }}</span>
+        <div class="version-links">
+          <a class="github-link" href="https://github.com/EKKOLearnAI/hermes-web-ui" target="_blank" rel="noopener noreferrer" title="GitHub">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          </a>
+          <a class="website-link" href="https://ekkolearnai.com/" target="_blank" rel="noopener noreferrer" title="Website">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          </a>
+        </div>
+        <span class="version-text" @click="openChangelog">Web UI v{{ appStore.serverVersion || "0.1.0" }}</span>
         <ThemeSwitch />
       </div>
+      <NButton v-if="appStore.clientOutdated" type="warning" size="tiny" block class="update-btn" @click="handleReloadClient">
+        {{ t('sidebar.reloadClientVersion', { version: appStore.serverVersion }) }}
+      </NButton>
       <NButton v-if="appStore.updateAvailable" type="primary" size="tiny" block class="update-btn" :loading="appStore.updating" @click="handleUpdate">
         {{ appStore.updating ? t('sidebar.updating') : t('sidebar.updateVersion', { version: appStore.latestVersion }) }}
       </NButton>
@@ -394,6 +403,11 @@ function openChangelog() {
   }
 }
 
+:deep(.profile-selector) {
+  padding-top: 12px;
+  border-top: 1px solid $border-color;
+}
+
 .nav-group {
   display: flex;
   flex-direction: column;
@@ -404,6 +418,12 @@ function openChangelog() {
     padding-top: 8px;
     border-top: 1px solid $border-color;
   }
+}
+
+.nav-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .nav-group-label {
@@ -532,9 +552,22 @@ function openChangelog() {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  overflow: hidden;
 }
 
-.github-link {
+.version-links {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+:deep(.theme-switch-container) {
+  flex-shrink: 0;
+}
+
+.github-link,
+.website-link {
   color: $text-muted;
   display: flex;
   align-items: center;
@@ -551,6 +584,11 @@ function openChangelog() {
 }
 
 .version-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
   transition: color 0.2s;
 
@@ -634,7 +672,18 @@ function openChangelog() {
   }
 
   .nav-group-label {
-    display: none;
+    justify-content: center;
+    gap: 2px;
+    padding: 8px 0 4px;
+    letter-spacing: 0;
+
+    span {
+      max-width: 36px;
+      overflow: hidden;
+      text-align: center;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
   }
 
   .nav-item {
@@ -651,13 +700,6 @@ function openChangelog() {
     }
   }
 
-  // Keep group children visible — user can still see icons
-  .nav-group > div {
-    display: flex !important;
-    flex-direction: column;
-    gap: 2px;
-  }
-
   // Hide selectors and footer text, keep theme switch
   :deep(.profile-selector),
   :deep(.model-selector) {
@@ -665,6 +707,12 @@ function openChangelog() {
   }
 
   .sidebar-footer {
+    .logout-item {
+      margin: 0;
+      padding: 10px 4px;
+      border-radius: $radius-sm;
+    }
+
     .logout-item span {
       display: none;
     }
@@ -674,12 +722,25 @@ function openChangelog() {
     }
 
     .version-text,
-    .github-link {
+    .version-links {
       display: none;
     }
 
     .status-row {
       justify-content: center;
+
+      :deep(.input-sm) {
+        display: none;
+      }
+    }
+
+    .version-info {
+      justify-content: center;
+      padding: 4px 0;
+
+      :deep(.theme-switch-container) {
+        flex-direction: column;
+      }
     }
   }
 }
@@ -744,5 +805,9 @@ function openChangelog() {
       width: 90px;
     }
   }
+}
+
+.fun-link {
+  text-decoration: none;
 }
 </style>

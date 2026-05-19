@@ -3,6 +3,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 
 const openSessionSearchMock = vi.hoisted(() => vi.fn())
+const mockAppStore = vi.hoisted(() => ({
+  sidebarOpen: true,
+  sidebarCollapsed: false,
+  connected: true,
+  serverVersion: 'test',
+  latestVersion: '',
+  updateAvailable: false,
+  clientOutdated: false,
+  updating: false,
+  toggleSidebar: vi.fn(),
+  toggleSidebarCollapsed: vi.fn(),
+  closeSidebar: vi.fn(),
+  doUpdate: vi.fn(),
+  reloadClient: vi.fn(),
+}))
 
 vi.mock('@/composables/useSessionSearch', () => ({
   useSessionSearch: () => ({
@@ -11,16 +26,7 @@ vi.mock('@/composables/useSessionSearch', () => ({
 }))
 
 vi.mock('@/stores/hermes/app', () => ({
-  useAppStore: () => ({
-    sidebarOpen: true,
-    connected: true,
-    serverVersion: 'test',
-    updateAvailable: false,
-    updating: false,
-    toggleSidebar: vi.fn(),
-    closeSidebar: vi.fn(),
-    doUpdate: vi.fn(),
-  }),
+  useAppStore: () => mockAppStore,
 }))
 
 vi.mock('vue-router', async (importOriginal) => {
@@ -35,6 +41,9 @@ vi.mock('vue-router', async (importOriginal) => {
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: (key: string) => key,
+  }),
+  createI18n: () => ({
+    global: { locale: { value: 'en' }, setLocaleMessage: vi.fn() },
   }),
 }))
 
@@ -55,7 +64,7 @@ vi.mock('naive-ui', async () => {
       error: vi.fn(),
     }),
     NButton: {
-      template: '<button><slot /></button>',
+      template: '<button v-bind="$attrs"><slot /></button>',
     },
     NSelect: {
       template: '<div />',
@@ -68,6 +77,13 @@ import AppSidebar from '@/components/layout/AppSidebar.vue'
 describe('AppSidebar search entry', () => {
   beforeEach(() => {
     openSessionSearchMock.mockClear()
+    mockAppStore.serverVersion = 'test'
+    mockAppStore.latestVersion = ''
+    mockAppStore.updateAvailable = false
+    mockAppStore.clientOutdated = false
+    mockAppStore.updating = false
+    mockAppStore.sidebarCollapsed = false
+    mockAppStore.reloadClient.mockClear()
   })
 
   it('opens the session search modal from the sidebar button', async () => {
@@ -89,5 +105,56 @@ describe('AppSidebar search entry', () => {
 
     await searchButton!.trigger('click')
     expect(openSessionSearchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers a client reload when the server version differs from the loaded bundle', async () => {
+    mockAppStore.clientOutdated = true
+    mockAppStore.serverVersion = '0.5.17'
+    const wrapper = mount(AppSidebar, {
+      global: {
+        stubs: {
+          ProfileSelector: true,
+          ModelSelector: true,
+          LanguageSwitch: true,
+          ThemeSwitch: true,
+        },
+      },
+    })
+
+    const reloadButton = wrapper.findAll('button')
+      .find(node => node.text().includes('sidebar.reloadClientVersion'))
+    expect(reloadButton).toBeTruthy()
+
+    await reloadButton!.trigger('click')
+    expect(mockAppStore.reloadClient).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses short group labels and keeps group folding active when collapsed', async () => {
+    mockAppStore.sidebarCollapsed = true
+    const wrapper = mount(AppSidebar, {
+      global: {
+        stubs: {
+          ProfileSelector: true,
+          ModelSelector: true,
+          LanguageSwitch: true,
+          ThemeSwitch: true,
+          NButton: true,
+        },
+      },
+    })
+
+    expect(wrapper.classes()).toContain('collapsed')
+    expect(wrapper.findAll('.nav-group-label span').map(node => node.text())).toEqual([
+      'sidebar.groupConversationShort',
+      'sidebar.groupAgentShort',
+      'sidebar.groupMonitoringShort',
+      'sidebar.groupSystemShort',
+    ])
+
+    const agentGroup = wrapper.findAll('.nav-group')[1]
+    expect(agentGroup.find('.nav-group-items').attributes('style')).toBeUndefined()
+
+    await agentGroup.find('.nav-group-label').trigger('click')
+    expect(agentGroup.find('.nav-group-items').attributes('style')).toContain('display: none')
   })
 })

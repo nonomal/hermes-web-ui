@@ -15,16 +15,18 @@ const options = computed(() =>
   })),
 )
 
-const activeName = computed(() => profilesStore.activeProfile?.name ?? '')
+const activeName = computed(() => profilesStore.activeProfileName ?? '')
 
-function handleChange(value: string | number | Array<string | number>) {
+async function handleChange(value: string | number | Array<string | number>) {
   if (typeof value === 'string' && value !== activeName.value) {
-    profilesStore.switchProfile(value).then(ok => {
-      if (ok) {
-        message.success(t('profiles.switchSuccess', { name: value }))
-        window.location.reload()
-      }
-    })
+    const ok = await profilesStore.switchProfile(value)
+    if (ok) {
+      message.success(t('profiles.switchSuccess', { name: value }))
+      // Reload to refresh all profile-dependent data
+      window.location.reload()
+    } else {
+      message.error(t('profiles.switchFailed'))
+    }
   }
 }
 
@@ -39,6 +41,7 @@ onMounted(() => {
   <div class="profile-selector">
     <div class="selector-label">{{ t('sidebar.profiles') }}</div>
     <NSelect
+      data-testid="profile-selector-select"
       :value="activeName"
       :options="options"
       :loading="profilesStore.switching"

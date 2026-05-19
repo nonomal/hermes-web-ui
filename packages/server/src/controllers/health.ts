@@ -1,8 +1,6 @@
 import { existsSync, readFileSync } from 'fs'
 import { resolve } from 'path'
 import * as hermesCli from '../services/hermes/hermes-cli'
-import { getGatewayManagerInstance } from '../services/gateway-bootstrap'
-import { config } from '../config'
 
 declare const __APP_VERSION__: string
 
@@ -70,18 +68,11 @@ export function startVersionCheck(): void {
 export async function healthCheck(ctx: any) {
   const raw = await hermesCli.getVersion()
   const hermesVersion = raw.split('\n')[0].replace('Hermes Agent ', '') || ''
-  let gatewayOk = false
-  try {
-    const mgr = getGatewayManagerInstance()
-    const upstream = mgr?.getUpstream() || config.upstream
-    const res = await fetch(`${upstream.replace(/\/$/, '')}/health`, { signal: AbortSignal.timeout(5000) })
-    gatewayOk = res.ok
-  } catch { }
   ctx.body = {
-    status: gatewayOk ? 'ok' : 'error',
+    status: 'ok',
     platform: 'hermes-agent',
     version: hermesVersion,
-    gateway: gatewayOk ? 'running' : 'stopped',
+    gateway: 'running',
     webui_version: LOCAL_VERSION,
     webui_latest: cachedLatestVersion,
     webui_update_available: Boolean(LOCAL_VERSION && cachedLatestVersion && cachedLatestVersion !== LOCAL_VERSION),

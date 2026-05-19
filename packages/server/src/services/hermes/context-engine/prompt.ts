@@ -1,6 +1,7 @@
 // ─── Agent Identity Instructions ────────────────────────────
 
 import type { MemberInfo } from './types'
+import { getSystemPrompt } from '../../../lib/llm-prompt'
 
 interface AgentInstructionsParams {
     agentName: string
@@ -11,33 +12,65 @@ interface AgentInstructionsParams {
 }
 
 export function buildAgentInstructions(params: AgentInstructionsParams): string {
+    // Deduplicate members by name (primary key) to avoid duplicate roles
+    // If multiple entries have the same name, prefer the one with description
+    const uniqueMembersMap = new Map<string, MemberInfo>()
+
+    for (const m of params.members) {
+        const existing = uniqueMembersMap.get(m.name)
+        // Prefer entries with description
+        if (!existing || (m.description && !existing.description)) {
+            uniqueMembersMap.set(m.name, m)
+        }
+    }
+
+    const uniqueMembers = Array.from(uniqueMembersMap.values())
+
     let memberSection: string
-    if (params.members.length > 0) {
-        memberSection = params.members
+    if (uniqueMembers.length > 0) {
+        memberSection = uniqueMembers
             .map(m => m.description ? `- ${m.name}: ${m.description}` : `- ${m.name}`)
             .join('\n')
     } else if (params.memberNames.length > 0) {
-        memberSection = params.memberNames.map(n => `- ${n}`).join('\n')
+        // Deduplicate member names as well
+        const uniqueNames = Array.from(new Set(params.memberNames))
+        memberSection = uniqueNames.map(n => `- ${n}`).join('\n')
     } else {
         memberSection = '- 未知'
     }
 
-    return `你是"${params.agentName}"，群聊房间"${params.roomName}"中的 AI 助手。
+    // Handle empty agent description
+    const roleDescription = params.agentDescription?.trim()
+        ? params.agentDescription
+        : '专业的 AI 助手，随时准备协助解决问题。'
 
-你的角色：${params.agentDescription}
+    const basePrompt = `你是"${params.agentName}"，群聊房间"${params.roomName}"中的 AI 助手。
+
+你的角色：${roleDescription}
 
 当前房间成员：
 ${memberSection}
 
 规则：
-- 有人用 @${params.agentName} 提及你时才需要回复，重点回应提及你的人。
+- 当你收到群聊任务时，说明系统已经判断你需要回复；请直接回应当前消息，不要因为消息里同时提及其他成员而拒绝回复或输出空回复。
+- 重点回应提及你的人。
 - 回答简洁、对群聊有帮助。
-- 不要假装是人类，需要时明确表明自己是 AI。
-- 对话历史中包含多个人的消息，每条消息前标有发送者名字。
-- 对话开头可能包含之前的对话摘要，用于提供更早的上下文。
-- 回复最新一条提及你的消息。
-- 如果需要其他 agent 协作或明确回复某个人，使用 @名字 来提及对方。
-- 自行判断对话是否已经结束——如果问题已解决、达成共识、或对方只是陈述不需要回复，则不要再 @任何人，直接结束回复，避免产生无意义的循环对话。`
+	- 不要假装是人类，需要时明确表明自己是 AI。
+	- 对话历史中包含多个人的消息，每条消息前标有发送者名字。
+	- 历史消息里的"[发送者]: ..."只是系统添加的归属标记，用来帮助你理解谁说了这句话；不要在你的回复中复述或模仿这种方括号前缀。
+	- 回复时使用自然语言即可；如果需要点名某人，只使用 @名字，不要输出"[${params.agentName}]:"这类格式。
+	- 对话开头可能包含之前的对话摘要，用于提供更早的上下文。
+	- 回复最新一条提及你的消息。
+	- 群聊系统支持 agent 之间通过 @名字 接力：当你在回复中写出 @某个成员，系统会把消息路由给对应成员。
+	- 如果用户明确要求你叫、让、请某个 agent 执行任务，不要自己代办，不要说你无法指挥其他 agent；请直接用 @名字 转交任务，并简短说明你已转交。
+	- 如果需要其他 agent 协作或明确回复某个人，使用 @名字 来提及对方，并把需要对方执行的任务写清楚。
+	- 不要主动 @ 任何人，除非最新消息明确要求你转交、邀请、询问某个具体成员。
+	- 如果只是回答提问，直接回答，不要在结尾 @ 其他成员继续接力。
+	- 不要为了活跃气氛、征求补充、让别人也看看而 @ 其他 agent 或用户。
+	- 只有在确实需要对方执行动作、提供信息、确认决策时，才可以 @名字。
+	- 自行判断对话是否已经结束——如果问题已解决、达成共识、或对方只是陈述不需要回复，则不要再 @任何人，直接结束回复，避免产生无意义的循环对话。`
+
+    return getSystemPrompt(basePrompt)
 }
 
 // ─── Summarization Prompts ─────────────────────────────────

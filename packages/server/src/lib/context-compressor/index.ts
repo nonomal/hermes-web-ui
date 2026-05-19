@@ -8,26 +8,33 @@
  * 1. If total tokens < trigger threshold → return as-is
  * 2. Pre-clean: truncate old tool results (no LLM call)
  * 3. Load snapshot from SQLite for incremental update
- * 4. Keep last 20 messages verbatim (tail protection by message count)
+ * 4. Keep last 10 messages verbatim (tail protection by message count)
  * 5. Summarize everything before the tail
  * 6. Save snapshot: last_message_index = index where compression ends
  */
 
-import { EventSource } from 'eventsource'
 import { encodingForModel, getEncoding } from 'js-tiktoken'
+import { randomUUID } from 'crypto'
 import { logger } from '../../services/logger'
+import { AgentBridgeClient, type AgentBridgeRunResult } from '../../services/hermes/agent-bridge'
 import {
   getCompressionSnapshot,
   saveCompressionSnapshot,
   deleteCompressionSnapshot,
 } from '../../db/hermes/compression-snapshot'
-import { getDb } from '../../db/index'
 
 // ─── Types ───────────────────────────────────────────────
 
+export interface ContentBlock {
+  type: 'text' | 'image' | 'file'
+  text?: string
+  path?: string
+  source?: { type: string; media_type?: string; data?: string }
+}
+
 export interface ChatMessage {
   role: string
-  content: string
+  content: string | ContentBlock[]
   tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>
   tool_call_id?: string
   name?: string
@@ -39,7 +46,7 @@ export interface CompressionConfig {
   triggerTokens: number
   /** Summary token target (default: 8000) */
   summaryBudget: number
-  /** Number of recent messages to keep verbatim (default: 20) */
+  /** Number of recent messages to keep verbatim (default: 10) */
   tailMessageCount: number
   /** Timeout for LLM summarization call (default: 60_000ms) */
   summarizationTimeoutMs: number
@@ -48,7 +55,7 @@ export interface CompressionConfig {
 export const DEFAULT_COMPRESSION_CONFIG: CompressionConfig = {
   triggerTokens: 100_000,
   summaryBudget: 8_000,
-  tailMessageCount: 20,
+  tailMessageCount: 10,
   summarizationTimeoutMs: 120_000,
 }
 
@@ -63,6 +70,12 @@ export interface CompressedResult {
     verbatimCount: number
     compressedStartIndex: number
   }
+}
+
+export interface SummarizerOptions {
+  profile?: string
+  model?: string | null
+  provider?: string | null
 }
 
 // ─── Token counting ─────────────────────────────────────
@@ -165,7 +178,7 @@ Be specific with file paths, commands, line numbers, and results.]
 ## Critical Context
 [Any specific values, error messages, configuration details, or data that would be lost without explicit preservation]`
 
-function buildFullPrompt(contentToSummarize: string, summaryBudget: number): string {
+export function buildFullPrompt(contentToSummarize: string, summaryBudget: number): string {
   return `You are a summarization agent creating a context checkpoint.
 Your output will be injected as reference material for a DIFFERENT
 assistant that continues the conversation.
@@ -187,7 +200,7 @@ Target ~${summaryBudget} tokens. Be CONCRETE — include file paths, command out
 Write only the summary body. Do not include any preamble or prefix.`
 }
 
-function buildIncrementalPrompt(previousSummary: string, contentToSummarize: string, summaryBudget: number): string {
+export function buildIncrementalPrompt(previousSummary: string, contentToSummarize: string, summaryBudget: number): string {
   return `You are a summarization agent creating a context checkpoint.
 Your output will be injected as reference material for a DIFFERENT
 assistant that continues the conversation.
@@ -222,11 +235,25 @@ Write only the summary body. Do not include any preamble or prefix.`
 
 // ─── Pre-cleaning ───────────────────────────────────────
 
-function serializeForSummary(messages: ChatMessage[]): string {
+export function serializeForSummary(messages: ChatMessage[]): string {
   const parts: string[] = []
+
+  function contentToString(content: string | ContentBlock[]): string {
+    if (typeof content === 'string') return content
+    if (Array.isArray(content)) {
+      return content.map(block => {
+        if (block.type === 'text') return block.text || ''
+        if (block.type === 'image') return `[Image: ${block.path || ''}]`
+        if (block.type === 'file') return `[File: ${block.path || ''}]`
+        return ''
+      }).join('')
+    }
+    return ''
+  }
+
   for (const msg of messages) {
     const role = msg.role === 'tool' ? `[tool:${msg.name || 'unknown'}]` : msg.role
-    let content = msg.content || ''
+    let content = contentToString(msg.content || '')
 
     if (msg.role === 'tool' && content.length > 5500) {
       content = content.slice(0, 4000) + '\n... [truncated]\n...' + content.slice(-1500)
@@ -251,13 +278,13 @@ function serializeForSummary(messages: ChatMessage[]): string {
  * Convert messages to conversation history format for LLM API.
  * Tool calls are converted to text format within assistant messages.
  */
-function buildConversationHistory(messages: ChatMessage[]): Array<{ role: string; content: string }> {
+export function buildConversationHistory(messages: ChatMessage[]): Array<{ role: string; content: string }> {
   const result: Array<{ role: string; content: string }> = []
 
   for (const msg of messages) {
     if (msg.role === 'tool') {
       // Convert tool result to text and append to previous assistant message
-      const toolText = `[Tool result: ${msg.name || 'unknown'}]\n${(msg.content || '').slice(0, 500)}${msg.content && msg.content.length > 500 ? '...' : ''}`
+      const toolText = `[Tool result: ${msg.name || 'unknown'}]\n${(msg.content || '').slice(0, 4000)}${msg.content && msg.content.length > 4000 ? '...' : ''}`
       // Find the last assistant message and append to it
       const lastAssistant = result.findLast(m => m.role === 'assistant')
       if (lastAssistant) {
@@ -270,13 +297,48 @@ function buildConversationHistory(messages: ChatMessage[]): Array<{ role: string
       // Include tool calls in assistant message
       const toolsInfo = msg.tool_calls.map(tc => {
         let args = tc.function.arguments
-        if (args.length > 1000) args = args.slice(0, 1000) + '...'
+        if (args.length > 4000) args = args.slice(0, 4000) + '...'
         return `[Calling tool: ${tc.function.name} with arguments: ${args}]`
       }).join('\n')
       const content = msg.content ? `${msg.content}\n\n${toolsInfo}` : toolsInfo
       result.push({ role: msg.role, content })
-    } else if (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system') {
-      result.push({ role: msg.role, content: msg.content || '' })
+    } else if (msg.role === 'user') {
+      // Handle ContentBlock[] format: { type: 'text', text: '...' } or { type: 'image', path: '...' }
+      let contentStr = ''
+      const content = msg.content || ''
+      if (typeof content === 'string') {
+        contentStr = content
+      } else if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === 'text') {
+            contentStr += block.text || ''
+          } else if (block.type === 'image') {
+            contentStr += `[Image: ${block.path || ''}]`
+          } else if (block.type === 'file') {
+            contentStr += `[File: ${block.path || ''}]`
+          }
+        }
+      }
+      if (contentStr.length > 4000) contentStr = contentStr.slice(0, 4000) + '...'
+      result.push({ role: 'user', content: contentStr })
+    } else if (msg.role === 'assistant' || msg.role === 'system') {
+      let contentStr = ''
+      const content = msg.content
+      if (typeof content === 'string') {
+        contentStr = content
+      } else if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === 'text') {
+            contentStr += block.text || ''
+          } else if (block.type === 'image') {
+            contentStr += `[Image: ${block.path || ''}]`
+          } else if (block.type === 'file') {
+            contentStr += `[File: ${block.path || ''}]`
+          }
+        }
+      }
+      if (contentStr.length > 4000) contentStr = contentStr.slice(0, 4000) + '...'
+      result.push({ role: msg.role, content: contentStr })
     }
     // Skip other roles
   }
@@ -284,7 +346,7 @@ function buildConversationHistory(messages: ChatMessage[]): Array<{ role: string
   return result
 }
 
-function pruneOldToolResults(messages: ChatMessage[], keepRecentCount: number): ChatMessage[] {
+export function pruneOldToolResults(messages: ChatMessage[], keepRecentCount: number): ChatMessage[] {
   if (messages.length <= keepRecentCount) return messages
 
   const tail = messages.slice(-keepRecentCount)
@@ -292,7 +354,15 @@ function pruneOldToolResults(messages: ChatMessage[], keepRecentCount: number): 
 
   const pruned = head.map(msg => {
     if (msg.role !== 'tool') return msg
-    const content = msg.content || ''
+    let content = ''
+    if (typeof msg.content === 'string') {
+      content = msg.content
+    } else if (Array.isArray(msg.content)) {
+      content = msg.content.map(block => {
+        if (block.type === 'text') return block.text || ''
+        return `[${block.type}]`
+      }).join('')
+    }
     const preview = content.slice(0, 100).replace(/\n/g, ' ')
     const truncated = content.length > 100 ? '...' : ''
     return { ...msg, content: `[${msg.name || 'tool'}] ${preview}${truncated}` }
@@ -303,17 +373,21 @@ function pruneOldToolResults(messages: ChatMessage[], keepRecentCount: number): 
 
 // ─── LLM Summarization ──────────────────────────────────
 
-async function callSummarizer(
+export async function callSummarizer(
   upstream: string,
   apiKey: string | undefined,
   prompt: string,
   history: Array<{ role: string; content: string }>,
   timeoutMs: number,
   previousSummary?: string,
-  profile?: string,
+  summarizer?: string | SummarizerOptions,
 ): Promise<string> {
-  const sessionId = `compress_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
-
+  void upstream
+  void apiKey
+  const options: SummarizerOptions = typeof summarizer === 'string'
+    ? { profile: summarizer }
+    : summarizer || {}
+  const profile = options.profile || 'default'
   const convHistory: Array<{ role: string; content: string }> = [...history]
 
   if (previousSummary) {
@@ -323,91 +397,38 @@ async function callSummarizer(
     )
   }
 
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+  const bridge = new AgentBridgeClient({ timeoutMs: timeoutMs + 15_000 })
+  const sessionId = `compress_${Date.now().toString(36)}_${randomUUID().replace(/-/g, '').slice(0, 12)}`
 
-  const res = await fetch(`${upstream}/v1/runs`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      input: prompt,
-      conversation_history: convHistory,
-      session_id: sessionId,
-    }),
-    signal: AbortSignal.timeout(timeoutMs),
-  })
-
-  if (!res.ok) {
-    throw new Error(`Summarization run failed: ${res.status}`)
-  }
-
-  const { run_id } = await res.json() as { run_id: string }
-
-  return new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      source.close()
-      reject(new Error('Summarization timed out'))
-    }, timeoutMs)
-
-    const eventsUrl = new URL(`${upstream}/v1/runs/${run_id}/events`)
-
-    // Use Authorization header instead of query parameter for better compatibility
-    const eventSourceInit: any = apiKey ? {
-      fetch: (url: string, init: any = {}) => fetch(url, {
-        ...init,
-        headers: {
-          ...(init.headers || {}),
-          Authorization: `Bearer ${apiKey}`,
-        },
-      }),
-    } : {}
-
-    // @ts-ignore - eventsource library types are too strict
-    const source = new EventSource(eventsUrl.toString(), eventSourceInit)
-
-    source.onmessage = (event: MessageEvent) => {
-      try {
-        const parsed = JSON.parse(event.data)
-        if (parsed.event === 'run.completed') {
-          clearTimeout(timer)
-          source.close()
-          deleteCompressSession(sessionId, profile).catch(() => { })
-          const output = parsed.output
-          if (!output || typeof output !== 'string' || output.trim() === '') {
-            reject(new Error('Empty summarization response'))
-            return
-          }
-          resolve(output.trim())
-        } else if (parsed.event === 'run.failed') {
-          clearTimeout(timer)
-          source.close()
-          deleteCompressSession(sessionId, profile).catch(() => { })
-          reject(new Error(parsed.error || 'Summarization run failed'))
-        }
-      } catch { /* ignore parse errors */ }
-    }
-
-    source.onerror = () => {
-      clearTimeout(timer)
-      source.close()
-      deleteCompressSession(sessionId, profile).catch(() => { })
-      reject(new Error('Summarization SSE connection error'))
-    }
-  })
-}
-
-/** Enqueue compression session for later deletion instead of deleting immediately */
-async function deleteCompressSession(sessionId: string, profile?: string): Promise<void> {
   try {
-    const db = getDb()
-    if (!db) return
-    const now = Date.now()
-    db.prepare(
-      `INSERT INTO gc_pending_session_deletes (session_id, profile_name, status, attempt_count, last_error, created_at, updated_at, next_attempt_at)
-       VALUES (?, ?, 'pending', 0, NULL, ?, ?, 0)
-       ON CONFLICT(session_id) DO NOTHING`,
-    ).run(sessionId, profile || 'default', now, now)
-  } catch { /* best-effort */ }
+    const result = await bridge.request<AgentBridgeRunResult>({
+      action: 'chat',
+      session_id: sessionId,
+      message: prompt,
+      conversation_history: convHistory,
+      profile,
+      source: 'api_server',
+      wait: true,
+      timeout: Math.ceil(timeoutMs / 1000),
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.provider ? { provider: options.provider } : {}),
+    }, { timeoutMs: timeoutMs + 15_000 })
+
+    if (result.status === 'error') {
+      throw new Error(result.error || 'Summarization bridge run failed')
+    }
+
+    const payload = result.result as any
+    const output = String(
+      payload?.final_response ||
+      result.output ||
+      '',
+    ).trim()
+    if (!output) throw new Error('Empty summarization response')
+    return output
+  } finally {
+    await bridge.destroy(sessionId, profile).catch(() => undefined)
+  }
 }
 
 // ─── Main Compressor ────────────────────────────────────
@@ -436,7 +457,7 @@ export class ChatContextCompressor {
     upstream: string,
     apiKey: string | undefined,
     sessionId?: string,
-    profile?: string,
+    summarizer?: string | SummarizerOptions,
   ): Promise<CompressedResult> {
     const total = messages.length
 
@@ -460,7 +481,7 @@ export class ChatContextCompressor {
         sessionId, snapshot.lastMessageIndex,
       )
       return this.incrementalCompress(
-        messages, snapshot, upstream, apiKey, sessionId!, makeMeta(), profile,
+        messages, snapshot, upstream, apiKey, sessionId!, makeMeta(), summarizer,
       )
     } else {
       // No snapshot → full compress (compress all messages)
@@ -468,7 +489,7 @@ export class ChatContextCompressor {
         '[context-compressor] session=%s: full compress %d messages',
         sessionId, total,
       )
-      return this.fullCompress(messages, upstream, apiKey, sessionId!, makeMeta(), profile)
+      return this.fullCompress(messages, upstream, apiKey, sessionId!, makeMeta(), summarizer)
     }
   }
 
@@ -479,7 +500,7 @@ export class ChatContextCompressor {
     apiKey: string | undefined,
     sessionId: string,
     meta: CompressedResult['meta'],
-    profile?: string,
+    summarizer?: string | SummarizerOptions,
   ): Promise<CompressedResult> {
     const { summary: previousSummary, lastMessageIndex } = snapshot
     const total = messages.length
@@ -491,6 +512,23 @@ export class ChatContextCompressor {
     const tailStart = Math.max(0, newMessages.length - tailCount)
     const toCompress = newMessages.slice(0, tailStart)
     const tail = newMessages.slice(tailStart)
+
+    if (toCompress.length === 0) {
+      return {
+        messages: [
+          { role: 'user', content: SUMMARY_PREFIX + '\n\n' + previousSummary },
+          ...newMessages,
+        ],
+        meta: {
+          ...meta,
+          compressed: true,
+          llmCompressed: false,
+          summaryTokenEstimate: countTokens(SUMMARY_PREFIX + previousSummary),
+          verbatimCount: newMessages.length,
+          compressedStartIndex: lastMessageIndex,
+        },
+      }
+    }
 
     logger.info(
       '[context-compressor] [incremental-llm] compressing %d of %d new messages, keeping %d tail',
@@ -504,15 +542,28 @@ export class ChatContextCompressor {
       const history = buildConversationHistory(toCompress)
 
       const t0 = Date.now()
-      summary = await callSummarizer(upstream, apiKey, prompt, history, this.config.summarizationTimeoutMs, previousSummary, profile)
+      summary = await callSummarizer(upstream, apiKey, prompt, history, this.config.summarizationTimeoutMs, previousSummary, summarizer)
       logger.info('[context-compressor] incremental-llm done in %dms, %d chars', Date.now() - t0, summary.length)
     } catch (err: any) {
-      logger.warn('[context-compressor] incremental-llm failed: %s — reusing previous summary', err.message)
-      summary = previousSummary
+      logger.warn('[context-compressor] incremental-llm failed: %s — keeping new messages verbatim', err.message)
+      return {
+        messages: [
+          { role: 'user', content: SUMMARY_PREFIX + '\n\n' + previousSummary },
+          ...newMessages,
+        ],
+        meta: {
+          ...meta,
+          compressed: true,
+          llmCompressed: false,
+          summaryTokenEstimate: countTokens(SUMMARY_PREFIX + previousSummary),
+          verbatimCount: newMessages.length,
+          compressedStartIndex: lastMessageIndex,
+        },
+      }
     }
 
     const result: ChatMessage[] = [
-      { role: 'system', content: SUMMARY_PREFIX + '\n\n' + summary },
+      { role: 'user', content: SUMMARY_PREFIX + '\n\n' + summary },
       ...tail,
     ]
 
@@ -540,7 +591,7 @@ export class ChatContextCompressor {
     apiKey: string | undefined,
     sessionId: string,
     meta: CompressedResult['meta'],
-    profile?: string,
+    summarizer?: string | SummarizerOptions,
   ): Promise<CompressedResult> {
     const total = messages.length
     const cleaned = pruneOldToolResults(messages, this.config.tailMessageCount)
@@ -566,19 +617,21 @@ export class ChatContextCompressor {
     let summary: string | null = null
     try {
       const t0 = Date.now()
-      summary = await callSummarizer(upstream, apiKey, prompt, history, this.config.summarizationTimeoutMs, undefined, profile)
+      summary = await callSummarizer(upstream, apiKey, prompt, history, this.config.summarizationTimeoutMs, undefined, summarizer)
       logger.info('[context-compressor] full-llm done in %dms, %d chars', Date.now() - t0, summary.length)
     } catch (err: any) {
       logger.warn('[context-compressor] full-llm failed: %s', err.message)
     }
 
+    if (!summary) {
+      return { messages: cleaned, meta }
+    }
+
     const result: ChatMessage[] = []
 
-    if (summary) {
-      result.push({ role: 'system', content: SUMMARY_PREFIX + '\n\n' + summary })
-      if (sessionId) {
-        saveCompressionSnapshot(sessionId, summary, tailStart - 1, total)
-      }
+    result.push({ role: 'user', content: SUMMARY_PREFIX + '\n\n' + summary })
+    if (sessionId) {
+      saveCompressionSnapshot(sessionId, summary, tailStart - 1, total)
     }
 
     result.push(...tail)
@@ -600,4 +653,64 @@ export class ChatContextCompressor {
   static invalidateSnapshot(sessionId: string): void {
     deleteCompressionSnapshot(sessionId)
   }
+}
+
+async function* readSseFrames(stream: ReadableStream<Uint8Array>): AsyncGenerator<{ event?: string; data: string }> {
+  const decoder = new TextDecoder()
+  const reader = stream.getReader()
+  let buffer = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      let boundary = buffer.indexOf('\n\n')
+      while (boundary >= 0) {
+        const raw = buffer.slice(0, boundary)
+        buffer = buffer.slice(boundary + 2)
+        const frame = parseSseFrame(raw)
+        if (frame?.data) yield frame
+        boundary = buffer.indexOf('\n\n')
+      }
+    }
+
+    buffer += decoder.decode()
+    const frame = parseSseFrame(buffer)
+    if (frame?.data) yield frame
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+function parseSseFrame(raw: string): { event?: string; data: string } | null {
+  let event: string | undefined
+  const data: string[] = []
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line || line.startsWith(':')) continue
+    if (line.startsWith('event:')) {
+      event = line.slice(6).trim()
+    } else if (line.startsWith('data:')) {
+      data.push(line.slice(5).trimStart())
+    }
+  }
+  if (data.length === 0) return null
+  return { event, data: data.join('\n') }
+}
+
+function extractResponseText(response: any): string {
+  const output = Array.isArray(response?.output) ? response.output : []
+  const parts: string[] = []
+  for (const item of output) {
+    if (item.type !== 'message') continue
+    const content = Array.isArray(item.content) ? item.content : []
+    for (const part of content) {
+      if (part.type === 'output_text' || part.type === 'text') {
+        parts.push(part.text || '')
+      }
+    }
+  }
+  if (parts.length > 0) return parts.join('')
+  return typeof response?.output_text === 'string' ? response.output_text : ''
 }

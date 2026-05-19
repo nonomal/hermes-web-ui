@@ -113,7 +113,7 @@ describe('native-style Hermes usage analytics DB aggregation', () => {
     profileDir = null
   })
 
-  it('sums direct state.db rows in the period while excluding local api_server copies', async () => {
+  it('sums direct state.db rows in the period', async () => {
     const now = 1_700_000_000
     profileDir = createStateDb(true)
     profileMock.getActiveProfileDir.mockReturnValue(profileDir)
@@ -190,23 +190,40 @@ describe('native-style Hermes usage analytics DB aggregation', () => {
     const result = await mod.getUsageStatsFromDb(30, now)
 
     expect(result).toMatchObject({
-      input_tokens: 138,
-      output_tokens: 75,
+      input_tokens: 638,
+      output_tokens: 575,
       cache_read_tokens: 16,
       cache_write_tokens: 3,
       reasoning_tokens: 7,
-      sessions: 4,
-      total_api_calls: 3,
+      sessions: 5,
+      total_api_calls: 8,
     })
-    expect(result.cost).toBeCloseTo(0.043)
+    expect(result.cost).toBeCloseTo(5.043)
     expect(result.by_model).toEqual([
-      { model: 'gpt-5', input_tokens: 107, output_tokens: 53, cache_read_tokens: 11, cache_write_tokens: 2, reasoning_tokens: 5, sessions: 2 },
+      { model: 'gpt-5', input_tokens: 607, output_tokens: 553, cache_read_tokens: 11, cache_write_tokens: 2, reasoning_tokens: 5, sessions: 3 },
       { model: 'tool-model', input_tokens: 30, output_tokens: 20, cache_read_tokens: 5, cache_write_tokens: 1, reasoning_tokens: 2, sessions: 1 },
     ])
     expect(result.by_day).toHaveLength(2)
-    expect(result.by_day[0]).toEqual({ date: day(now - 86400), tokens: 10, cache: 1, sessions: 1, cost: 0.005 })
-    expect(result.by_day[1]).toMatchObject({ date: day(now), tokens: 203, cache: 15, sessions: 3 })
-    expect(result.by_day[1].cost).toBeCloseTo(0.038)
+    expect(result.by_day[0]).toEqual({
+      date: day(now - 86400),
+      input_tokens: 7,
+      output_tokens: 3,
+      cache_read_tokens: 1,
+      cache_write_tokens: 0,
+      sessions: 1,
+      errors: 0,
+      cost: 0.005,
+    })
+    expect(result.by_day[1]).toMatchObject({
+      date: day(now),
+      input_tokens: 631,
+      output_tokens: 572,
+      cache_read_tokens: 15,
+      cache_write_tokens: 3,
+      sessions: 4,
+      errors: 0,
+    })
+    expect(result.by_day[1].cost).toBeCloseTo(5.038)
   })
 
   it('keeps analytics working against older state.db schemas without api_call_count', async () => {

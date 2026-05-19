@@ -1,34 +1,100 @@
 <script setup lang="ts">
-import { NPopconfirm } from 'naive-ui'
+import { computed, ref, onUnmounted } from 'vue'
+import { NPopconfirm, NCheckbox } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
+import multiavatar from '@multiavatar/multiavatar'
 import type { Session } from '@/stores/hermes/chat'
+import { useAppStore } from '@/stores/hermes/app'
 import { formatTimestampMs } from '@/shared/session-display'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   session: Session
   active: boolean
   pinned: boolean
   canDelete: boolean
   streaming?: boolean
-}>()
+  selectable?: boolean
+  selected?: boolean
+  showProfile?: boolean
+}>(), {
+  showProfile: true,
+})
 
 const emit = defineEmits<{
   select: []
   contextmenu: [event: MouseEvent]
   delete: []
+  'toggle-select': []
 }>()
 
 const { t } = useI18n()
+const appStore = useAppStore()
+const sessionModelName = computed(() =>
+  props.session.model
+    ? appStore.displayModelName(props.session.model, props.session.provider)
+    : '',
+)
+const profileName = computed(() => props.session.profile || 'default')
+const profileAvatar = computed(() => multiavatar(profileName.value))
+
+let longPressTimer: ReturnType<typeof setTimeout> | null = null
+const longPressTriggered = ref(false)
+
+function onTouchStart(e: TouchEvent) {
+  longPressTriggered.value = false
+  longPressTimer = setTimeout(() => {
+    longPressTriggered.value = true
+    const touch = e.touches[0]
+    const syntheticEvent = new MouseEvent('contextmenu', {
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+      bubbles: true,
+    })
+    emit('contextmenu', syntheticEvent)
+  }, 500)
+}
+
+function onTouchEnd() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+}
+
+function onTouchMove() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+}
+
+function onClick() {
+  if (longPressTriggered.value) {
+    longPressTriggered.value = false
+    return
+  }
+  emit('select')
+}
+
+onUnmounted(() => {
+  if (longPressTimer) clearTimeout(longPressTimer)
+})
 </script>
 
 <template>
   <button
     class="session-item"
-    :class="{ active }"
+    :class="{ active, 'batch-mode': selectable }"
     :aria-current="active ? 'page' : undefined"
-    @click="emit('select')"
+    @click="onClick"
     @contextmenu="emit('contextmenu', $event)"
+    @touchstart="onTouchStart"
+    @touchend="onTouchEnd"
+    @touchmove="onTouchMove"
   >
+    <div v-if="selectable" class="session-item-checkbox">
+      <NCheckbox :checked="selected" @click.stop="emit('toggle-select')" />
+    </div>
     <div class="session-item-content">
       <span class="session-item-title-row">
         <span v-if="pinned" class="session-item-pin" aria-hidden="true">
@@ -44,11 +110,15 @@ const { t } = useI18n()
         </span>
       </span>
       <span class="session-item-meta">
-        <span v-if="session.model" class="session-item-model">{{ session.model }}</span>
+        <span v-if="sessionModelName" class="session-item-model" :title="session.model">{{ sessionModelName }}</span>
         <span class="session-item-time">{{ formatTimestampMs(session.createdAt) }}</span>
       </span>
+      <span v-if="props.showProfile" class="session-item-profile">
+        <span class="session-item-profile-avatar" v-html="profileAvatar" />
+        <span class="session-item-profile-name">{{ profileName }}</span>
+      </span>
     </div>
-    <NPopconfirm v-if="canDelete" @positive-click="emit('delete')">
+    <NPopconfirm v-if="canDelete && !selectable" @positive-click="emit('delete')">
       <template #trigger>
         <button class="session-item-delete" @click.stop>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -58,3 +128,38 @@ const { t } = useI18n()
     </NPopconfirm>
   </button>
 </template>
+
+<style scoped>
+.session-item-profile {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  margin-top: 4px;
+}
+
+.session-item-profile-avatar {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.session-item-profile-avatar :deep(svg) {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.session-item-profile-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-muted);
+}
+</style>

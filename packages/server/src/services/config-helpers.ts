@@ -1,13 +1,15 @@
-import { readFile, writeFile, copyFile, chmod } from 'fs/promises'
+import { readFile, chmod } from 'fs/promises'
 import { readdir, stat } from 'fs/promises'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
-import YAML from 'js-yaml'
-import { getActiveProfileDir, getActiveConfigPath, getActiveEnvPath, getActiveAuthPath } from './hermes/hermes-profile'
+import { getActiveProfileDir, getActiveConfigPath, getActiveEnvPath, getActiveAuthPath, getProfileDir } from './hermes/hermes-profile'
 import { logger } from './logger'
+import { safeFileStore } from './safe-file-store'
 
 // --- Provider env var mapping (from hermes providers.py HERMES_OVERLAYS + config.py) ---
 export const PROVIDER_ENV_MAP: Record<string, { api_key_env: string; base_url_env: string }> = {
+  'fun-codex': { api_key_env: '', base_url_env: '' },
+  'fun-claude': { api_key_env: '', base_url_env: '' },
   openrouter: { api_key_env: 'OPENROUTER_API_KEY', base_url_env: '' },
   'glm-coding-plan': { api_key_env: '', base_url_env: '' },
   zai: { api_key_env: 'GLM_API_KEY', base_url_env: '' },
@@ -20,17 +22,19 @@ export const PROVIDER_ENV_MAP: Record<string, { api_key_env: string; base_url_en
   'alibaba-coding-plan': { api_key_env: 'ALIBABA_CODING_PLAN_API_KEY', base_url_env: 'ALIBABA_CODING_PLAN_BASE_URL' },
   anthropic: { api_key_env: 'ANTHROPIC_API_KEY', base_url_env: '' },
   xai: { api_key_env: 'XAI_API_KEY', base_url_env: '' },
+  'xai-oauth': { api_key_env: '', base_url_env: '' },
   xiaomi: { api_key_env: 'XIAOMI_API_KEY', base_url_env: '' },
   'xiaomi-token-plan': { api_key_env: '', base_url_env: '' },
   gemini: { api_key_env: 'GEMINI_API_KEY', base_url_env: '' },
   kilocode: { api_key_env: 'KILO_API_KEY', base_url_env: '' },
   'ai-gateway': { api_key_env: 'AI_GATEWAY_API_KEY', base_url_env: '' },
   cliproxyapi: { api_key_env: '', base_url_env: '' },
-  'opencode-zen': { api_key_env: 'OPENCODE_API_KEY', base_url_env: '' },
-  'opencode-go': { api_key_env: 'OPENCODE_API_KEY', base_url_env: '' },
+  'opencode-zen': { api_key_env: 'OPENCODE_ZEN_API_KEY', base_url_env: '' },
+  'opencode-go': { api_key_env: 'OPENCODE_GO_API_KEY', base_url_env: '' },
   huggingface: { api_key_env: 'HF_TOKEN', base_url_env: '' },
   arcee: { api_key_env: 'ARCEE_API_KEY', base_url_env: '' },
   stepfun: { api_key_env: 'STEPFUN_API_KEY', base_url_env: '' },
+  'ollama-cloud': { api_key_env: 'OLLAMA_API_KEY', base_url_env: '' },
   nous: { api_key_env: '', base_url_env: '' },
   'openai-codex': { api_key_env: '', base_url_env: '' },
   copilot: { api_key_env: '', base_url_env: '' },
@@ -69,56 +73,73 @@ export interface ModelGroup {
 const configPath = () => getActiveConfigPath()
 
 export async function readConfigYaml(): Promise<Record<string, any>> {
-  const raw = await safeReadFile(configPath())
-  if (!raw) return {}
-  return (YAML.load(raw) as Record<string, any>) || {}
+  return safeFileStore.readYaml(configPath())
+}
+
+export async function readConfigYamlForProfile(profile: string): Promise<Record<string, any>> {
+  return safeFileStore.readYaml(join(getProfileDir(profile), 'config.yaml'))
 }
 
 export async function writeConfigYaml(config: Record<string, any>): Promise<void> {
-  const cp = configPath()
-  await copyFile(cp, cp + '.bak')
-  const yamlStr = YAML.dump(config, {
-    lineWidth: -1,
-    noRefs: true,
-    quotingType: '"',
-  })
-  await writeFile(cp, yamlStr, 'utf-8')
+  await safeFileStore.writeYaml(configPath(), config, { backup: true })
+}
+
+export async function updateConfigYaml<T = void>(
+  updater: (config: Record<string, any>) => Record<string, any> | { data: Record<string, any>; result: T; write?: boolean } | Promise<Record<string, any> | { data: Record<string, any>; result: T; write?: boolean }>,
+): Promise<T | undefined> {
+  return safeFileStore.updateYaml(configPath(), updater, { backup: true })
+}
+
+export function stripLegacyApiServerGatewayConfig(config: Record<string, any>): { config: Record<string, any>; changed: boolean } {
+  if (!config.platforms || typeof config.platforms !== 'object' || Array.isArray(config.platforms)) {
+    return { config, changed: false }
+  }
+
+  if (config.platforms.api_server !== undefined) {
+    delete config.platforms.api_server
+    if (Object.keys(config.platforms).length === 0) delete config.platforms
+    return { config, changed: true }
+  }
+
+  return { config, changed: false }
 }
 
 // --- .env helpers ---
 
-export async function saveEnvValue(key: string, value: string): Promise<void> {
-  const envPath = getActiveEnvPath()
-  let raw: string
-  try {
-    raw = await readFile(envPath, 'utf-8')
-  } catch {
-    raw = ''
+function assertValidEnvKey(key: string): void {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+    throw new Error(`Invalid .env key: ${JSON.stringify(key)}`)
   }
-  const remove = !value
-  const lines = raw.split('\n')
-  let found = false
-  const result: string[] = []
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (trimmed.startsWith('#') && trimmed.startsWith(`# ${key}=`)) {
-      if (!remove) result.push(`${key}=${value}`)
-      found = true
-    } else {
-      const eqIdx = trimmed.indexOf('=')
-      if (eqIdx !== -1 && trimmed.slice(0, eqIdx).trim() === key) {
+}
+
+export async function saveEnvValue(key: string, value: string): Promise<void> {
+  assertValidEnvKey(key)
+  const envPath = getActiveEnvPath()
+  await safeFileStore.updateText(envPath, (raw) => {
+    const remove = !value
+    const lines = raw.split('\n')
+    let found = false
+    const result: string[] = []
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (trimmed.startsWith('#') && trimmed.startsWith(`# ${key}=`)) {
         if (!remove) result.push(`${key}=${value}`)
         found = true
       } else {
-        result.push(line)
+        const eqIdx = trimmed.indexOf('=')
+        if (eqIdx !== -1 && trimmed.slice(0, eqIdx).trim() === key) {
+          if (!remove) result.push(`${key}=${value}`)
+          found = true
+        } else {
+          result.push(line)
+        }
       }
     }
-  }
-  if (!found && !remove) {
-    result.push(`${key}=${value}`)
-  }
-  let output = result.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\n+$/, '') + '\n'
-  await writeFile(envPath, output, 'utf-8')
+    if (!found && !remove) {
+      result.push(`${key}=${value}`)
+    }
+    return result.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\n+$/, '') + '\n'
+  })
   try { await chmod(envPath, 0o600) } catch { /* ignore */ }
 }
 
